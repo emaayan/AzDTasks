@@ -4,32 +4,29 @@ import org.azd.authentication.PersonalAccessTokenCredential;
 import org.azd.common.types.Author;
 import org.azd.core.types.*;
 import org.azd.enums.Instance;
-import org.azd.enums.WorkItemExpand;
 import org.azd.exceptions.AzDException;
 import org.azd.http.ClientRequest;
 import org.azd.workitemtracking.types.*;
 import org.azdtasks.core.WorkItemComments;
 import org.azdtasks.core.WorkItemException;
 import org.azdtasks.core.WorkItemModel;
+import org.azdtasks.core.WorkItemType;
 import org.azdtasks.core.types.Comment;
 import org.azdtasks.core.types.CommentList;
-import org.jetbrains.annotations.NotNull;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public abstract class AbstractWorkItemClient {
 
     private final static Logger LOG = LoggerFactory.getLogger(AbstractWorkItemClient.class);
 
-    public static @NotNull String toURL(String org) {
+    public static String toURL(String org) {
         return Instance.BASE_INSTANCE.append(org);
     }
 
@@ -61,6 +58,51 @@ public abstract class AbstractWorkItemClient {
         return project;
     }
 
+
+    private int top=50;
+
+    public int getTop() {
+        return top;
+    }
+
+    public void setTop(int top) {
+        this.top = top;
+    }
+
+    protected boolean timePrecision=false;
+
+    public boolean isTimePrecision() {
+        return timePrecision;
+    }
+
+    public void setTimePrecision(boolean timePrecision) {
+        this.timePrecision = timePrecision;
+    }
+
+    public Map<String, WorkItemType> getWorkItemTypes() throws AzDException {
+        final org.azd.workitemtracking.types.WorkItemTypes workItemTypesImpl = getWorkItemTypesImpl();
+        final Map<String, WorkItemType> workItemTypes = new HashMap<>();
+        for (org.azd.workitemtracking.types.WorkItemType wt : workItemTypesImpl.getWorkItemTypes()) {
+            final List<WorkItemStateColor> states = wt.getStates();
+            final Map<String, String> m = states.stream()
+                    .collect(Collectors.toMap(WorkItemStateColor::getName, WorkItemStateColor::getCategory));
+            final WorkItemType workItemTy = new WorkItemType(wt.getName(), m);
+            workItemTypes.put(workItemTy.name(), workItemTy);
+        }
+        return workItemTypes;
+    }
+
+    public WorkItemModel updateWorkItemState(int id, String state) throws AzDException {
+        return convertToModel(updateWorkItem(id, "System.State", state));
+    }
+
+    protected WorkItem updateWorkItem(int id, String fieldName, String value) throws AzDException {
+        return updateWorkItem(id, Map.of(fieldName, value));
+    }
+
+    protected abstract WorkItem updateWorkItem(int id, Map<String, Object> fields) throws AzDException;
+
+    protected abstract org.azd.workitemtracking.types.WorkItemTypes getWorkItemTypesImpl() throws AzDException;
 
     protected Date parseDate(String dateStr) {
         if (dateStr == null || dateStr.isEmpty()) {
@@ -121,7 +163,7 @@ public abstract class AbstractWorkItemClient {
         } else {
             commentListFor = new WorkItemComments(List.of());
         }
-        
+
         final WorkItemModel workItemModel = new WorkItemModel(id, title, description, workItemType, state, assignedTo, createdDate, changedDate, commentListFor, url);
         return workItemModel;
     }
@@ -154,7 +196,7 @@ public abstract class AbstractWorkItemClient {
     }
 
 
-    protected @NotNull String toQuery(String searchText) {
+    protected String toQuery(String searchText) {
         final String escapedSearch = searchText.replace("'", "''");
         final String query = """
                 SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType], \
@@ -165,7 +207,7 @@ public abstract class AbstractWorkItemClient {
         return query;
     }
 
-    protected @NotNull List<WorkItemModel> toWorkItemModels(WorkItemList workItemsList) {
+    protected List<WorkItemModel> toWorkItemModels(WorkItemList workItemsList) {
         final List<WorkItem> workItems = workItemsList.getWorkItems();
         final List<WorkItemModel> list = workItems.parallelStream().map(this::convertToModel).toList();
         return list;
@@ -191,14 +233,14 @@ public abstract class AbstractWorkItemClient {
         }
     }
 
-    protected @NotNull Map<String, String> toProjects(final Projects projects) {
+    protected Map<String, String> toProjects(final Projects projects) {
         final List<Project> projects1 = projects.getProjects();
         final Map<String, String> projectsList = projects1.stream()
                 .collect(Collectors.toMap(Project::getId, Project::getName));
         return projectsList;
     }
 
-    protected @NotNull Map<String, String> toTeams(final WebApiTeams teams) {
+    protected Map<String, String> toTeams(final WebApiTeams teams) {
         final List<WebApiTeam> teamsList = teams.getTeams();
         final Map<String, String> projectsList = teamsList.stream()
                 .collect(Collectors.toMap(WebApiTeam::getId, WebApiTeam::getName));

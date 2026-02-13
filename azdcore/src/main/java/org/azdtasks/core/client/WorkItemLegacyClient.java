@@ -1,22 +1,18 @@
 package org.azdtasks.core.client;
 
-import org.azd.core.types.Project;
 import org.azd.core.types.Projects;
-import org.azd.core.types.Teams;
 import org.azd.core.types.WebApiTeams;
 import org.azd.enums.WorkItemExpand;
 import org.azd.exceptions.AzDException;
 import org.azd.interfaces.AzDClient;
-import org.azd.interfaces.CoreDetails;
 import org.azd.interfaces.WorkItemTrackingDetails;
 import org.azd.utils.AzDClientApi;
 import org.azd.workitemtracking.types.WorkItem;
 import org.azd.workitemtracking.types.WorkItemList;
 import org.azd.workitemtracking.types.WorkItemQueryResult;
-import org.azdtasks.core.WorkItemException;
+import org.azd.workitemtracking.types.WorkItemTypes;
 import org.azdtasks.core.WorkItemModel;
 
-import java.util.List;
 import java.util.Map;
 
 public class WorkItemLegacyClient extends AbstractWorkItemClient {
@@ -37,15 +33,27 @@ public class WorkItemLegacyClient extends AbstractWorkItemClient {
     }
 
     @Override
+    protected WorkItem updateWorkItem(int id, Map<String, Object> fields) throws AzDException {
+        final WorkItem workItem1 = workItemTrackingApi.updateWorkItem(id, fields);
+        return workItem1;
+    }
+
+    @Override
+    protected WorkItemTypes getWorkItemTypesImpl() throws AzDException {
+        return  workItemTrackingApi.getWorkItemTypes();
+    }
+
+    @Override
     protected WorkItemList getWorkItems(int[] ids) throws AzDException {
         return workItemTrackingApi.getWorkItems(ids, WorkItemExpand.LINKS);
     }
 
     @Override
     protected WorkItemQueryResult query(String query, String team) throws AzDException {
-        return workItemTrackingApi.queryByWiql(team, query, 50, false);
+        return workItemTrackingApi.queryByWiql(team, query, getTop(), isTimePrecision());
     }
 
+    
     @Override
     protected Projects getProjectsImpl() throws AzDException {
         return azDClient.getCoreApi().getProjects();

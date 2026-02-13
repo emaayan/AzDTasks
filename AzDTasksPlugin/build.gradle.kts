@@ -22,7 +22,6 @@ dependencies {
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         testImplementation("junit:junit:4.13.2")
-        implementation("io.github.hkarthik7:azd:6.1.3")
         implementation("org.azdtasks:azdcore:1.0-SNAPSHOT")
         bundledPlugin("com.intellij.tasks")
     }

@@ -1,4 +1,213 @@
 package org.azdtasks.plugin;
 
-public class AzDoRepositoryEditor {
+
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.ComboBox;
+import com.intellij.platform.workspace.jps.bridge.impl.JpsUrlListBridge;
+import com.intellij.tasks.config.BaseRepositoryEditor;
+import com.intellij.tasks.impl.TaskUiUtil;
+import com.intellij.ui.SimpleListCellRenderer;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBTextField;
+import com.intellij.ui.components.fields.IntegerField;
+import com.intellij.util.Consumer;
+import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.UIUtil;
+import org.azdtasks.core.WorkItemType;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import javax.swing.*;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+/**
+ * Configuration UI for Azure DevOps repository
+ */
+public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
+    private static final Logger LOG = Logger.getInstance(AzDoRepositoryEditor.class);
+    private  ComboBoxUpdater projects;
+    private  ComboBoxUpdater teams;
+    private  ComboBoxUpdater workTypesForBug;
+    private  ComboBoxUpdater workTypesForFeature;
+    private JBTextField organizationUrlField;
+    private IntegerField topField;
+    
+    public AzDoRepositoryEditor(Project project, AzDoRepository repository, Consumer<? super AzDoRepository> changeListener) {
+        super(project, repository, changeListener);
+        LOG.info("Started Editor");
+        myUsernameLabel.setVisible(false);
+        myUserNameText.setVisible(false);
+        myPasswordLabel.setVisible(true);
+        myPasswordLabel.setText("Personal access token:");
+        myPasswordText.setVisible(true);
+        myPasswordText.setToolTipText("Personal Access Token with Work Items read permission");
+        myUrlLabel.setVisible(true);
+        myURLText.setVisible(true);
+        myURLText.setEnabled(false);
+        myShareUrlCheckBox.setVisible(false);
+    }
+
+    
+    @Override
+    public void apply() {
+        myRepository.setOrganizationUrl(organizationUrlField.getText().trim());
+        projects.update();
+        teams.update();
+        workTypesForBug.update();
+        workTypesForFeature.update();
+        
+        final int value = topField.getValue();
+        if (value > 0) {
+            myRepository.setTop(value);
+        }
+
+        super.apply();
+    }
+
+    @Override
+    protected void afterTestConnection(boolean connectionSuccessful) {
+        super.afterTestConnection(connectionSuccessful);
+        LOG.info("Connection tested " + connectionSuccessful);
+        if (connectionSuccessful) {
+            updateProjectNamesInCombo();
+//            Messages.showInfoMessage(
+//                    myProject,
+//                    "Connection to Azure DevOps is successful!",
+//                    "Connection Test"
+//            );
+        }
+    }
+
+    private class ComboBoxUpdater extends TaskUiUtil.ComboBoxUpdater<String> {
+        
+        private final Supplier<String> selectedItemSupplier;
+        private final Consumer<String> selectedItemConsumer;
+        private final Callable<Map<String, String>> onListFetche;
+        ComboBoxUpdater( String title, Supplier<String> selectedItemSupplier, Consumer<String> selectedItemConsumer, Callable<Map<String, String>> onListFetched) {
+            super(AzDoRepositoryEditor.this.myProject, "Getting " + title, new ComboBox<>(200));
+            myComboBox.setRenderer(SimpleListCellRenderer.create("", String::toString));
+            this.selectedItemSupplier = selectedItemSupplier;
+            this.selectedItemConsumer = selectedItemConsumer;
+            this.onListFetche = onListFetched;
+            installListener(myComboBox);
+        }
+
+        
+        @Override
+        protected @NotNull List<String> fetch(@NotNull ProgressIndicator indicator) throws Exception {
+            final Map<String, String> projects =onListFetche.call();
+            return new ArrayList<>(projects.values());
+        }
+
+        public void update(){
+            final Object selectedItem =getCombo().getSelectedItem();
+            if(selectedItem!=null){
+                selectedItemConsumer.consume(selectedItem.toString());
+            }
+        }
+
+        public JComboBox<String> getCombo() {
+            return myComboBox;
+        }
+
+        @Override
+        public @Nullable String getSelectedItem() {
+            return selectedItemSupplier.get();
+        }
+
+        @Override
+        protected void handleError() {
+            super.handleError();
+            myComboBox.removeAllItems();
+        }
+
+    }
+
+    private void updateProjectNamesInCombo() {
+        projects.queue();
+        teams.queue();
+//        workTypesForBug.queue();
+//        workTypesForFeature.queue();
+    }
+
+    @Nullable
+    @Override
+    protected JComponent createCustomPanel() {
+        LOG.info("Building panel");
+                 
+        organizationUrlField = new JBTextField(myRepository.getOrganizationUrl());
+        organizationUrlField.setToolTipText("Azure DevOps organization");
+        organizationUrlField.getEmptyText().setText("Organization");
+        installListener(organizationUrlField);
+        
+        topField = new IntegerField("Max query results", 1, 200);
+        topField.setCanBeEmpty(false);
+        topField.setDefaultValue(myRepository.getTop());
+        topField.setValue(myRepository.getTop());
+        installListener(topField);
+        
+        projects = new ComboBoxUpdater( "projects", myRepository::getProject, myRepository::setProject, () -> myRepository.getProjects().get());
+        teams = new ComboBoxUpdater( "teams", myRepository::getTeam, myRepository::setTeam, () -> myRepository.getTeams().get());
+        final Callable<Map<String, String>> mapCallable = () -> {
+            final String string = projects.getCombo().getSelectedItem().toString();
+            final Map<String, String> workItemTypes = myRepository.getWorkItemTypes(string);
+            return workItemTypes;
+        };
+        
+        workTypesForBug = new ComboBoxUpdater("workTypes for bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
+        workTypesForFeature = new ComboBoxUpdater( "workTypes for feature", myRepository::getFeatureWorkItemType, myRepository::setFeatureWorkItemType, mapCallable);
+        projects.getCombo().addItemListener(e -> {
+            if (e.getStateChange() == ItemEvent.SELECTED) {
+                try {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        workTypesForBug.queue();
+                        workTypesForFeature.queue();
+                    });
+
+                }catch (Throwable t){
+                    LOG.error("Error",t);
+                }
+            }
+        });
+        
+        ApplicationManager.getApplication().invokeLater(this::updateProjectNamesInCombo);
+//        UIUtil.invokeLaterIfNeeded(this::updateProjectNamesInCombo);
+        // Help text
+        final JBLabel helpLabel = new JBLabel("""
+                <html><body style='width: 400px'>\
+                <b>Setup Instructions:</b><br>\
+                1. Enter your organization name<br>\
+                2. Go to Azure DevOps → User Settings → Personal Access Tokens<br>\
+                3. Create a new token with 'Work Items (Read,write)' scope<br>\
+                4. Copy the token and paste it in the Personal Access Token field<br>\
+                5. Click 'Test Connection' to verify and fill in the combo boxes<br>\
+                </body></html>"""
+        );
+        helpLabel.setForeground(UIUtil.getContextHelpForeground());
+        helpLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        
+        return FormBuilder.createFormBuilder()
+                .addLabeledComponent("Organization:", organizationUrlField)
+                .addComponent(myTestButton)
+                .addComponent(helpLabel)
+                .addLabeledComponent("Project:", projects.getCombo())
+                .addLabeledComponent("Team:",teams.getCombo())
+                .addLabeledComponent("Max items:", topField)
+                .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
+                .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
+                .addComponentFillVertically(new JPanel(), 100)
+                .getPanel();
+    }
+
 }

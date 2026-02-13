@@ -6,17 +6,16 @@ build/
 .kotlin
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea
 *.iws
 *.iml
 *.ipr
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
-
+.idea
+.venv
+target
 ### Eclipse ###
 .apt_generated
 .classpath
@@ -41,3 +40,5 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+/AzDTasksPlugin/.intellijPlatform/
+/AzDTasksPlugin/.run/

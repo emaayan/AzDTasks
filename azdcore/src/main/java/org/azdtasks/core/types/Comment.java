@@ -81,7 +81,7 @@ public class Comment  extends SerializableEntity {
  	* The reactions of the comment. 
 	**/
 	@JsonProperty("reactions")
-	private List<CommentReaction> reactions;
+	private List<org.azdtasks.core.types.CommentReaction> reactions;
 	/**
  	* The text of the comment in HTML format. 
 	**/

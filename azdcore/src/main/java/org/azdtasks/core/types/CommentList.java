@@ -13,7 +13,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.azd.abstractions.serializer.SerializableEntity;
 import org.azd.common.types.ReferenceLinks;
 
-import java.io.Serializable;
 import java.util.List;
 
 
@@ -31,7 +30,7 @@ public class CommentList extends SerializableEntity {
      * List of comments in the current batch.
      **/
     @JsonProperty("comments")
-    private List<Comment> comments;
+    private List<org.azdtasks.core.types.Comment> comments;
     /**
      * A string token that can be used to retrieving next page of comments if available. Otherwise null.
      **/
