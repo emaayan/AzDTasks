@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+
+    <appender class="org.apache.log4j.ConsoleAppender" name="Console">
+        <param name="Target" value="System.out"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="%d %-5p %c{1} - %m%n"/>
+        </layout>
+    </appender>
+
+    <appender class="org.apache.log4j.RollingFileAppender" name="AeroScoutService">
+        <param name="file" value="logs/log.log"/>
+        <param name="MaxFileSize" value="10000KB"/>
+        <param name="MaxBackupIndex" value="10"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="%d %-5p %c{1} - %m%n"/>
+        </layout>
+    </appender>
+
+
+    <logger additivity="false" name="aeroscout.utils">
+        <level value="error"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+
+    <logger additivity="false" name="aeroscout.ps.testutil">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+    <logger additivity="false" name="aeroscout.ps.rssi.DefaultRadioMapModule">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+
+    <logger additivity="false" name="aeroscout.ps.presence.algorithms">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+    <logger additivity="false" name="aeroscout.ps.recording">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+    <logger additivity="false" name="aeroscout.ps.report">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+    <logger additivity="false" name="aeroscout.ps.burst">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+
+    <logger additivity="false" name="aeroscout.core">
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </logger>
+    <root>
+        <level value="info"/>
+        <appender-ref ref="AeroScoutService"/>
+        <appender-ref ref="Console"/>
+    </root>
+</log4j:configuration>
