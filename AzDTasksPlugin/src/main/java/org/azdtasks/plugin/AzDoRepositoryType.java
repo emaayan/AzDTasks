@@ -3,17 +3,13 @@ package org.azdtasks.plugin;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.tasks.TaskRepository;
-import com.intellij.tasks.TaskRepositorySubtype;
-import com.intellij.tasks.TaskState;
 import com.intellij.tasks.config.TaskRepositoryEditor;
 import com.intellij.tasks.impl.BaseRepositoryType;
 import com.intellij.util.Consumer;
 import icons.TasksIcons;
-import j.G.N;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
-import java.util.EnumSet;
 
 /**
  * Factory for creating Azure DevOps task repositories
@@ -39,7 +35,6 @@ public class AzDoRepositoryType extends BaseRepositoryType<AzDoRepository> {
     public TaskRepository createRepository() {
         return new AzDoRepository(this);
     }
-    
 
     @Override
     public Class<AzDoRepository> getRepositoryClass() {
@@ -50,5 +45,4 @@ public class AzDoRepositoryType extends BaseRepositoryType<AzDoRepository> {
     public @NotNull TaskRepositoryEditor createEditor(AzDoRepository repository, Project project, Consumer<? super AzDoRepository> changeListener) {
         return new AzDoRepositoryEditor(project, repository, changeListener);
     }
-    
 }
