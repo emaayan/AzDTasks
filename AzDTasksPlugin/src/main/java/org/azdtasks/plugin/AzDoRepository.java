@@ -62,7 +62,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     private AzDoRepository(AzDoRepository other) {
         super(other);
         LOG.info("Cloning AzDoRepository");
-        setOrganizationUrl(other.getOrganizationUrl());
+        setOrganization(other.getOrganization());
         setProject(other.getProject());
         setTeam(other.getTeam());
         setTop(other.getTop());
@@ -70,8 +70,15 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
     }
 
+    //used non standard naming conventions to avoid xml serializer
+    public AbstractWorkItemClient useClient() {
+        return client;
+    }
+    //used non standard naming conventions to avoid xml serializer
+    public void saveClient(AbstractWorkItemClient client) {
+        this.client = client;
+    }
 
-    
     @NotNull
     @Override
     public BaseRepository clone() {
@@ -79,8 +86,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
     
     public CompletableFuture<Map<String, String>> getProjects() {
-        if (!isEmpty(organizationUrl) && !isEmpty(myPassword)) {
-            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organizationUrl, myPassword);
+        final String password = getPassword();
+        if (canBeAccessed()) {
+            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organization, password);
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     return abstractWorkItemClient.getProjects();
@@ -94,8 +102,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     public final CompletableFuture<Map<String, String>> getTeams() {
-        if (!isEmpty(organizationUrl) && !isEmpty(myPassword)) {
-            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organizationUrl, myPassword);
+        final String password = getPassword();
+        if (canBeAccessed()) {
+            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organization, password);
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     return abstractWorkItemClient.getTeams();
@@ -114,9 +123,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     public @NotNull Map<String, String> getWorkItemTypes(String project1) throws AzDException {
-        final String organizationUrl1 = getOrganizationUrl();
+        final String organizationUrl1 = getOrganization();
         final String password = getPassword();
-        if (!isEmpty(organizationUrl1) && !isEmpty(project1) && !isEmpty(password)) {
+        if (canBeAccessed() && !isEmpty(project1)) {
             final AbstractWorkItemClient client = new WorkItemLegacyClient(organizationUrl1, project1, password);
             final Map<String, WorkItemType> workItemTypes1 =client.getWorkItemTypes();
             final Map<String, String> m = workItemTypes1.keySet()
@@ -124,6 +133,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                     .collect(Collectors.toMap(s -> s, s -> s));
             return m;    
         }else{
+            LOG.error("Not Configured");
             return Map.of();
         }
     }
@@ -132,7 +142,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     public Task[] getIssues(@Nullable String query, int offset, int limit, boolean withClosed, @NotNull ProgressIndicator cancelled) throws Exception {
         ensureClient();
         try {
-            final List<WorkItemModel> workItems = isEmpty(query) ? List.of() : client.searchWorkItems(query, getTeam());
+            final List<WorkItemModel> workItems = isEmpty(query) ? List.of() : useClient().searchWorkItems(query, getTeam());
             return workItems.parallelStream()
                     .map(this::convertToTask)
                     .toArray(Task[]::new);
@@ -150,7 +160,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         ensureClient();
         try {
             final int workItemId = Integer.parseInt(id);
-            final WorkItemModel workItem = client.getWorkItem(workItemId);
+            final WorkItemModel workItem = useClient().getWorkItem(workItemId);
             if (workItem == null) {
                 return null;
             }
@@ -324,9 +334,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         ensureClient();
 
         final String id = task.getId();
-        final WorkItemModel workItemModel = client.getWorkItem(Integer.parseInt(id));
+        final WorkItemModel workItemModel = useClient().getWorkItem(Integer.parseInt(id));
         final String workItemType = workItemModel.workItemType();
-        final Map<String, WorkItemType> workItemTypes = client.getWorkItemTypes();
+        final Map<String, WorkItemType> workItemTypes = useClient().getWorkItemTypes();
         final WorkItemType typeDef = workItemTypes.get(workItemType);
         if (typeDef != null) {
             final Set<CustomTaskState> result = new HashSet<>();
@@ -345,7 +355,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Override
     public void setTaskState(@NotNull Task task, @NotNull CustomTaskState state) throws Exception {
         final String id = task.getId();
-        final WorkItemModel workItemModel = client.updateWorkItemState(Integer.parseInt(id), state.getId());
+        final WorkItemModel workItemModel = useClient().updateWorkItemState(Integer.parseInt(id), state.getId());
         super.setTaskState(task, state);
     }
 
@@ -354,9 +364,10 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
      * Ensure a client is initialized
      */
     private void ensureClient() {
-        if (client == null) {
-            client = new WorkItemLegacyClient(getOrganizationUrl(), getProject(), getPassword());
-            client.setTop(top);
+        AbstractWorkItemClient client1 = useClient();
+        if (client1 == null) {
+            saveClient(new WorkItemLegacyClient(getOrganization(), getProject(), getPassword()));
+            useClient().setTop(top);
 //            try {
 //                setWorkItemTypes(client.getWorkItemTypes());
 //            } catch (AzDException e) {
@@ -367,23 +378,23 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public String getUrl() {
-        return AbstractWorkItemClient.toURL(getOrganizationUrl());
+        return AbstractWorkItemClient.toURL(getOrganization());
     }
 
-    private String organizationUrl = "";
+    private String organization = "";
 
-    @Attribute("organizationUrl")
-    public String getOrganizationUrl() {
-        return organizationUrl;
+    @Attribute("organization")
+    public String getOrganization() {
+        return organization;
     }
 
-    public void setOrganizationUrl(String organizationUrl) {
-        this.organizationUrl = organizationUrl;
-        if (!isEmpty(organizationUrl)) {
-            String url = WorkItemClient.toURL(this.organizationUrl);
+    public void setOrganization(String organization) {
+        this.organization = organization;
+        if (!isEmpty(organization)) {
+            String url = WorkItemClient.toURL(this.organization);
             setUrl(url);
         }
-        client = null; // Reset client when config changes
+        saveClient(null); // Reset client when config changes
     }
 
     private String project = "";
@@ -395,7 +406,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setProject(String project) {
         this.project = project;
-        client = null; // Reset client when config changes
+        saveClient(null); // Reset client when config changes
     }
 
 
@@ -435,7 +446,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setTeam(String team) {
         this.team = team;
-        client = null;
+        saveClient(null);
     }
 
     private int top = 100;
@@ -447,21 +458,25 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setTop(int top) {
         this.top = top;
-        client = null;
+        saveClient(null);
     }
 
     @Override
     public void setPassword(String password) {
         super.setPassword(password);
-        client = null; // Reset client when config changes
+        saveClient(null); // Reset client when config changes
     }
 
     @Override
     public boolean isConfigured() {
-        return !isEmpty(getOrganizationUrl())
-               && !isEmpty(getProject())
-               && !isEmpty(getPassword())
+        return canBeAccessed()
+                && !isEmpty(getProject())
                 ;
+    }
+
+    public boolean canBeAccessed() {
+        return !isEmpty(getOrganization())
+                && !isEmpty(getPassword());
     }
 
     @Override
@@ -474,7 +489,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         if (o == null || getClass() != o.getClass()) return false;
         if (!super.equals(o)) return false;
         AzDoRepository that = (AzDoRepository) o;
-        return Objects.equals(getOrganizationUrl(), that.getOrganizationUrl())
+        return Objects.equals(getOrganization(), that.getOrganization())
                && Objects.equals(getProject(), that.getProject())
                && Objects.equals(getTeam(), that.getTeam())
                && Objects.equals(getPassword(), that.getPassword())
@@ -487,6 +502,6 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getOrganizationUrl(), getProject(), getTeam(), getPassword(), getTop(),getBugWorkItemType(),getFeatureWorkItemType());
+        return Objects.hash(getOrganization(), getProject(), getTeam(), getPassword(), getTop(),getBugWorkItemType(),getFeatureWorkItemType());
     }
 }

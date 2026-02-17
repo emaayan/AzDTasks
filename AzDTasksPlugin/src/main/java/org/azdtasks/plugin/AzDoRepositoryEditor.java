@@ -1,46 +1,42 @@
 package org.azdtasks.plugin;
 
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
-import com.intellij.platform.workspace.jps.bridge.impl.JpsUrlListBridge;
 import com.intellij.tasks.config.BaseRepositoryEditor;
 import com.intellij.tasks.impl.TaskUiUtil;
 import com.intellij.ui.SimpleListCellRenderer;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.fields.IntegerField;
 import com.intellij.util.Consumer;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.UIUtil;
-import org.azdtasks.core.WorkItemType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
  * Configuration UI for Azure DevOps repository
  */
 public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     private static final Logger LOG = Logger.getInstance(AzDoRepositoryEditor.class);
+    private JBTextField organizationUrlField;
     private  ComboBoxUpdater projects;
     private  ComboBoxUpdater teams;
     private  ComboBoxUpdater workTypesForBug;
     private  ComboBoxUpdater workTypesForFeature;
-    private JBTextField organizationUrlField;
+
     private IntegerField topField;
     
     public AzDoRepositoryEditor(Project project, AzDoRepository repository, Consumer<? super AzDoRepository> changeListener) {
@@ -55,13 +51,14 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         myUrlLabel.setVisible(true);
         myURLText.setVisible(true);
         myURLText.setEnabled(false);
+        myTestButton.setEnabled(false);
         myShareUrlCheckBox.setVisible(false);
     }
 
     
     @Override
     public void apply() {
-        myRepository.setOrganizationUrl(organizationUrlField.getText().trim());
+        myRepository.setOrganization(organizationUrlField.getText().trim());
         projects.update();
         teams.update();
         workTypesForBug.update();
@@ -72,6 +69,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
             myRepository.setTop(value);
         }
 
+        myTestButton.setEnabled(myRepository.canBeAccessed());
         super.apply();
     }
 
@@ -110,6 +108,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
             return new ArrayList<>(projects.values());
         }
 
+
         public void update(){
             final Object selectedItem =getCombo().getSelectedItem();
             if(selectedItem!=null){
@@ -129,16 +128,17 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         @Override
         protected void handleError() {
             super.handleError();
-            myComboBox.removeAllItems();
+     //       myComboBox.removeAllItems();
         }
 
     }
 
     private void updateProjectNamesInCombo() {
-        projects.queue();
-        teams.queue();
-//        workTypesForBug.queue();
-//        workTypesForFeature.queue();
+        if (myRepository.canBeAccessed()) {
+            projects.queue();
+            teams.queue();
+        }
+        myTestButton.setEnabled(myRepository.canBeAccessed());
     }
 
     @Nullable
@@ -146,7 +146,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     protected JComponent createCustomPanel() {
         LOG.info("Building panel");
                  
-        organizationUrlField = new JBTextField(myRepository.getOrganizationUrl());
+        organizationUrlField = new JBTextField(myRepository.getOrganization());
         organizationUrlField.setToolTipText("Azure DevOps organization");
         organizationUrlField.getEmptyText().setText("Organization");
         installListener(organizationUrlField);
@@ -160,9 +160,14 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         projects = new ComboBoxUpdater( "projects", myRepository::getProject, myRepository::setProject, () -> myRepository.getProjects().get());
         teams = new ComboBoxUpdater( "teams", myRepository::getTeam, myRepository::setTeam, () -> myRepository.getTeams().get());
         final Callable<Map<String, String>> mapCallable = () -> {
-            final String string = projects.getCombo().getSelectedItem().toString();
-            final Map<String, String> workItemTypes = myRepository.getWorkItemTypes(string);
-            return workItemTypes;
+            final Object selectedItem = projects.getCombo().getSelectedItem();
+            if (selectedItem!=null) {
+                final String project = selectedItem.toString();
+                final Map<String, String> workItemTypes = myRepository.getWorkItemTypes(project);
+                return workItemTypes;
+            }else{
+                return Map.of();
+            }
         };
         
         workTypesForBug = new ComboBoxUpdater("workTypes for bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
@@ -170,18 +175,14 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         projects.getCombo().addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED) {
                 try {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        workTypesForBug.queue();
-                        workTypesForFeature.queue();
-                    });
-
+                    workTypesForBug.queue();
+                    workTypesForFeature.queue();
                 }catch (Throwable t){
                     LOG.error("Error",t);
                 }
             }
         });
-        
-        ApplicationManager.getApplication().invokeLater(this::updateProjectNamesInCombo);
+        updateProjectNamesInCombo();
 //        UIUtil.invokeLaterIfNeeded(this::updateProjectNamesInCombo);
         // Help text
         final JBLabel helpLabel = new JBLabel("""
@@ -196,18 +197,22 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         );
         helpLabel.setForeground(UIUtil.getContextHelpForeground());
         helpLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-        
-        return FormBuilder.createFormBuilder()
+
+        final JPanel panel = FormBuilder.createFormBuilder()
                 .addLabeledComponent("Organization:", organizationUrlField)
                 .addComponent(myTestButton)
                 .addComponent(helpLabel)
                 .addLabeledComponent("Project:", projects.getCombo())
-                .addLabeledComponent("Team:",teams.getCombo())
+                .addLabeledComponent("Team:", teams.getCombo())
                 .addLabeledComponent("Max items:", topField)
                 .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
                 .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
-                .addComponentFillVertically(new JPanel(), 100)
+                .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
+
+        return new JBScrollPane(panel,JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+
+
     }
 
 }
