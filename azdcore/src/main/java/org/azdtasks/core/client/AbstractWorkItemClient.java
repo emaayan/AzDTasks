@@ -3,12 +3,16 @@ package org.azdtasks.core.client;
 import org.azd.authentication.PersonalAccessTokenCredential;
 import org.azd.common.types.Author;
 import org.azd.core.types.*;
+import org.azd.enums.FieldType;
+import org.azd.enums.FieldUsage;
+import org.azd.enums.GetFieldsExpand;
 import org.azd.enums.Instance;
 import org.azd.exceptions.AzDException;
 import org.azd.http.ClientRequest;
 import org.azd.workitemtracking.types.*;
 import org.azdtasks.core.WorkItemComments;
 import org.azdtasks.core.WorkItemException;
+import org.azdtasks.core.WorkItemField;
 import org.azdtasks.core.WorkItemModel;
 import org.azdtasks.core.WorkItemType;
 import org.azdtasks.core.types.Comment;
@@ -20,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public abstract class AbstractWorkItemClient {
@@ -37,7 +42,6 @@ public abstract class AbstractWorkItemClient {
 
     public AbstractWorkItemClient(String organization, String personalAccessToken) {
         this(organization, null, personalAccessToken);
-
     }
 
     public AbstractWorkItemClient(String organization, String project, String personalAccessToken) {
@@ -59,7 +63,7 @@ public abstract class AbstractWorkItemClient {
     }
 
 
-    private int top=50;
+    private int top = 50;
 
     public int getTop() {
         return top;
@@ -69,7 +73,7 @@ public abstract class AbstractWorkItemClient {
         this.top = top;
     }
 
-    protected boolean timePrecision=false;
+    protected boolean timePrecision = false;
 
     public boolean isTimePrecision() {
         return timePrecision;
@@ -79,25 +83,84 @@ public abstract class AbstractWorkItemClient {
         this.timePrecision = timePrecision;
     }
 
-    public Map<String, WorkItemType> getWorkItemTypes() throws AzDException {
-        final org.azd.workitemtracking.types.WorkItemTypes workItemTypesImpl = getWorkItemTypesImpl();
-        final Map<String, WorkItemType> workItemTypes = new HashMap<>();
-        for (org.azd.workitemtracking.types.WorkItemType wt : workItemTypesImpl.getWorkItemTypes()) {
-            final List<WorkItemStateColor> states = wt.getStates();
-            final Map<String, String> m = states.stream()
-                    .collect(Collectors.toMap(WorkItemStateColor::getName, WorkItemStateColor::getCategory));
-            final WorkItemType workItemTy = new WorkItemType(wt.getName(), m);
-            workItemTypes.put(workItemTy.name(), workItemTy);
+
+    public Map<String, WorkItemField> getWorkItemFields(Predicate<WorkItemField> filter) throws WorkItemException {
+        try {
+            final List<org.azd.workitemtracking.types.WorkItemField> workItemFieldsImpl = getWorkItemFieldsImpl(GetFieldsExpand.EXTENSIONFIELDS);
+            final Map<String, WorkItemField> m = new HashMap<>();
+            workItemFieldsImpl.forEach(workItemField -> {
+                final FieldUsage usage = workItemField.getUsage();
+                if (FieldUsage.WORKITEM.equals(usage)) {
+                    final String referenceName = workItemField.getReferenceName();
+                    final String name = workItemField.getName();
+                    final FieldType type = workItemField.getType();
+                    final boolean readOnly = workItemField.getReadOnly();
+                    final String typeName = type.name();
+                    final String description = Objects.requireNonNullElse(workItemField.getDescription(), "");
+                    final WorkItemField value = new WorkItemField(referenceName, name, description, typeName, readOnly);
+                    if (filter.test(value)) {
+                        m.put(referenceName, value);
+                    }
+                }
+            });
+            return m;
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
         }
-        return workItemTypes;
     }
 
-    public WorkItemModel updateWorkItemState(int id, String state) throws AzDException {
-        return convertToModel(updateWorkItem(id, "System.State", state));
+    protected abstract List<org.azd.workitemtracking.types.WorkItemField> getWorkItemFieldsImpl(GetFieldsExpand getFieldsExpand) throws AzDException;
+
+    public Map<String, WorkItemType> getWorkItemTypes() throws WorkItemException {
+        try {
+            final org.azd.workitemtracking.types.WorkItemTypes workItemTypesImpl = getWorkItemTypesImpl();
+            final Map<String, WorkItemType> workItemTypes = new HashMap<>();
+            for (org.azd.workitemtracking.types.WorkItemType wt : workItemTypesImpl.getWorkItemTypes()) {
+                final List<WorkItemStateColor> states = wt.getStates();
+                final Map<String, String> m = states.stream()
+                        .collect(Collectors.toMap(WorkItemStateColor::getName, WorkItemStateColor::getCategory));
+                final WorkItemType workItemTy = new WorkItemType(wt.getName(), m);
+                workItemTypes.put(workItemTy.name(), workItemTy);
+            }
+            return workItemTypes;
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
+        }
     }
 
-    protected WorkItem updateWorkItem(int id, String fieldName, String value) throws AzDException {
-        return updateWorkItem(id, Map.of(fieldName, value));
+    public WorkItemModel getWorkItem(int id) throws WorkItemException {
+        try {
+            final WorkItem workItemImpl = getWorkItemImpl(id);
+            if (workItemImpl != null) {
+                final WorkItemModel workItemModel = convertToModel(workItemImpl);
+                return workItemModel;
+            } else {
+                return null;
+            }
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
+        }
+    }
+
+    protected abstract WorkItem getWorkItemImpl(int id) throws AzDException;
+
+    public WorkItemModel updateWorkItemState(int id, String state) throws WorkItemException {
+        final WorkItemModel workItem = updateWorkItem(id, "System.State", state);
+        return workItem;
+    }
+
+    public WorkItemModel addWorkItemComment(int id, String text) throws WorkItemException {
+        final WorkItemModel workItemModel = updateWorkItem(id, "System.History", text);
+        return workItemModel;
+    }
+
+    public WorkItemModel updateWorkItem(int id, String fieldName, String value) throws WorkItemException {
+        try {
+            final WorkItem workItem = updateWorkItem(id, Map.of(fieldName, value));
+            return convertToModel(workItem);
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
+        }
     }
 
     protected abstract WorkItem updateWorkItem(int id, Map<String, Object> fields) throws AzDException;
@@ -219,17 +282,21 @@ public abstract class AbstractWorkItemClient {
         return ids;
     }
 
-    public List<WorkItemModel> searchWorkItems(String string, String team) throws AzDException {
+    public List<WorkItemModel> searchWorkItems(String string, String team) throws WorkItemException {
         final String query = toQuery(string);
         LOG.info("Query: {}", query);
-        final WorkItemQueryResult workItemQueryResult = query(query, team);
-        final int[] ids = toIds(workItemQueryResult);
-        if (ids.length > 0) {
-            final WorkItemList workItemsList = getWorkItems(ids);
-            final List<WorkItemModel> list = toWorkItemModels(workItemsList);
-            return list;
-        } else {
-            return List.of();
+        try {
+            final WorkItemQueryResult workItemQueryResult = query(query, team);
+            final int[] ids = toIds(workItemQueryResult);
+            if (ids.length > 0) {
+                final WorkItemList workItemsList = getWorkItems(ids);
+                final List<WorkItemModel> list = toWorkItemModels(workItemsList);
+                return list;
+            } else {
+                return List.of();
+            }
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
         }
     }
 
@@ -268,15 +335,13 @@ public abstract class AbstractWorkItemClient {
         }
     }
 
-    protected abstract WorkItemList getWorkItems(int[] ids) throws AzDException;
+    protected abstract WorkItemList getWorkItems(int[] ids) throws WorkItemException;
 
-    protected abstract WorkItemQueryResult query(String query, String team) throws AzDException;
+    protected abstract WorkItemQueryResult query(String query, String team) throws WorkItemException;
 
-    protected abstract Projects getProjectsImpl() throws AzDException;
+    protected abstract Projects getProjectsImpl() throws WorkItemException;
 
-    protected abstract WebApiTeams getTeamsImpl() throws AzDException;
-
-    public abstract WorkItemModel getWorkItem(int id) throws AzDException;
+    protected abstract WebApiTeams getTeamsImpl() throws WorkItemException;
 
 
 }

@@ -11,14 +11,12 @@ import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xmlb.annotations.Tag;
 import icons.TasksIcons;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.azd.exceptions.AzDException;
 
-import org.azdtasks.core.WorkItemException;
-import org.azdtasks.core.WorkItemType;
+import org.azdtasks.core.*;
 import org.azdtasks.core.client.AbstractWorkItemClient;
 import org.azdtasks.core.client.WorkItemClient;
-import org.azdtasks.core.WorkItemComments;
-import org.azdtasks.core.WorkItemModel;
 import org.azdtasks.core.client.WorkItemLegacyClient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -27,6 +25,7 @@ import org.jetbrains.annotations.Unmodifiable;
 import javax.swing.*;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 /**
@@ -36,13 +35,13 @@ import java.util.stream.Collectors;
 public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
+    private Map<String, WorkItemType> workItemTypes=new HashMap<>();
 
     public static boolean isEmpty(String s) {
         return s == null || s.isEmpty();
     }
 
-    private transient AbstractWorkItemClient client;
-    
+    private transient AbstractWorkItemClient client = null;
     private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
     private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
 
@@ -66,29 +65,59 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         setProject(other.getProject());
         setTeam(other.getTeam());
         setTop(other.getTop());
+        setTimeTrackFieldName(other.getTimeTrackFieldName());
         workItemTypeToTaskTypeMap.putAll(other.workItemTypeToTaskTypeMap);
         taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
     }
 
-    //used non standard naming conventions to avoid xml serializer
-    public AbstractWorkItemClient useClient() {
-        return client;
+    /**
+     * Ensure a client is initialized
+     */
+    private synchronized AbstractWorkItemClient fetchClient() {
+        final AbstractWorkItemClient localClient = this.client;
+        if (localClient == null) {
+            final AbstractWorkItemClient c = createClient();
+            try {
+                workItemTypes = c.getWorkItemTypes();
+            } catch (WorkItemException e) {
+                LOG.error("Failed getting workItems",e);
+            }
+            setClient(c);
+            return c;
+        } else {
+            return localClient;
+        }
     }
-    //used non standard naming conventions to avoid xml serializer
-    public void saveClient(AbstractWorkItemClient client) {
+
+    private synchronized void setClient(AbstractWorkItemClient client) {
         this.client = client;
     }
+
+    private void clearClient() {
+        setClient(null);
+    }
+
+    private @NotNull AbstractWorkItemClient createClient() {
+        final String project = getProject();
+        return createClient(project);
+    }
+
+    private @NotNull AbstractWorkItemClient createClient(String project) {
+        final AbstractWorkItemClient client = new WorkItemLegacyClient(getOrganization(), project, getPassword());
+        client.setTop(top);
+        return client;
+    }
+
 
     @NotNull
     @Override
     public BaseRepository clone() {
         return new AzDoRepository(this);
     }
-    
+
     public CompletableFuture<Map<String, String>> getProjects() {
-        final String password = getPassword();
         if (canBeAccessed()) {
-            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organization, password);
+            final AbstractWorkItemClient abstractWorkItemClient = createClient();
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     return abstractWorkItemClient.getProjects();
@@ -102,9 +131,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     public final CompletableFuture<Map<String, String>> getTeams() {
-        final String password = getPassword();
         if (canBeAccessed()) {
-            final AbstractWorkItemClient abstractWorkItemClient = new WorkItemLegacyClient(organization, password);
+            final AbstractWorkItemClient abstractWorkItemClient = createClient();
             return CompletableFuture.supplyAsync(() -> {
                 try {
                     return abstractWorkItemClient.getTeams();
@@ -117,36 +145,55 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         }
     }
 
-    public Map<String, String> getWorkItemTypes() throws AzDException {
-        final String project1 = getProject();
-        return getWorkItemTypes(project1);
-    }
 
-    public @NotNull Map<String, String> getWorkItemTypes(String project1) throws AzDException {
-        final String organizationUrl1 = getOrganization();
-        final String password = getPassword();
-        if (canBeAccessed() && !isEmpty(project1)) {
-            final AbstractWorkItemClient client = new WorkItemLegacyClient(organizationUrl1, project1, password);
-            final Map<String, WorkItemType> workItemTypes1 =client.getWorkItemTypes();
-            final Map<String, String> m = workItemTypes1.keySet()
+    public @NotNull Map<String, String> getWorkItemFieldsForTimeTrack() throws WorkItemException {
+        if (canBeAccessed()) {
+            final AbstractWorkItemClient client = createClient();
+            final Map<String, WorkItemField> fields = client.getWorkItemFields(v -> v.isSystem() && v.type().equals("DOUBLE") && !v.isReadOnly());
+
+            final Map<String, String> m = fields.values()
                     .stream()
-                    .collect(Collectors.toMap(s -> s, s -> s));
-            return m;    
-        }else{
+                    .collect(Collectors.toMap(WorkItemField::id, WorkItemField::name));
+            m.put("", "");
+            return m;
+        } else {
             LOG.error("Not Configured");
             return Map.of();
         }
     }
 
+    public @NotNull Map<String, String> getWorkItemTypes(String project) throws WorkItemException {
+        if (canBeAccessed() && !isEmpty(project)) {
+            final AbstractWorkItemClient client = createClient(project);
+            final Map<String, WorkItemType> workItemTypes1 = client.getWorkItemTypes();
+            final Map<String, String> m = workItemTypes1.keySet()
+                    .stream()
+                    .collect(Collectors.toMap(s -> s, s -> s));
+            return m;
+        } else {
+            LOG.error("Not Configured");
+            return Map.of();
+        }
+    }
+
+
     @Override
     public Task[] getIssues(@Nullable String query, int offset, int limit, boolean withClosed, @NotNull ProgressIndicator cancelled) throws Exception {
-        ensureClient();
         try {
-            final List<WorkItemModel> workItems = isEmpty(query) ? List.of() : useClient().searchWorkItems(query, getTeam());
+            final List<WorkItemModel> workItems;
+            if (isEmpty(query)) {
+                workItems = List.of();
+            } else {
+                if (NumberUtils.isParsable(query)) {
+                    final WorkItemModel workItem = fetchClient().getWorkItem(Integer.parseInt(query));
+                    workItems = workItem != null ? List.of(workItem) : List.of();
+                } else {
+                    workItems = fetchClient().searchWorkItems(query, getTeam());
+                }
+            }
             return workItems.parallelStream()
                     .map(this::convertToTask)
                     .toArray(Task[]::new);
-
         } catch (AzDException e) {
             LOG.error("Failed to fetch work items", e);
             throw new Exception("Failed to fetch work items: " + e.getMessage(), e);
@@ -157,10 +204,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Nullable
     @Override
     public Task findTask(@NotNull String id) throws Exception {
-        ensureClient();
         try {
             final int workItemId = Integer.parseInt(id);
-            final WorkItemModel workItem = useClient().getWorkItem(workItemId);
+            final WorkItemModel workItem = fetchClient().getWorkItem(workItemId);
             if (workItem == null) {
                 return null;
             }
@@ -261,7 +307,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 return comments;
             }
 
-            
+
             @Override
             public @NotNull Icon getIcon() {
                 return switch (getType()) {
@@ -274,7 +320,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 //return TasksIcons.Bug;
             }
 
-            
+
             @Override
             public @NotNull TaskType getType() {
                 final String s = workItemModel.workItemType();
@@ -304,9 +350,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             public boolean isClosed() {
                 final String state = workItemModel.state();
                 return state != null && (state.equalsIgnoreCase("Closed") ||
-                                         state.equalsIgnoreCase("Done") ||
-                                         state.equalsIgnoreCase("Removed") ||
-                                         state.equalsIgnoreCase("Resolved")
+                        state.equalsIgnoreCase("Done") ||
+                        state.equalsIgnoreCase("Removed") ||
+                        state.equalsIgnoreCase("Resolved")
                 );
             }
 
@@ -331,12 +377,11 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public @NotNull @Unmodifiable Set<CustomTaskState> getAvailableTaskStates(@NotNull Task task) throws Exception {
-        ensureClient();
-
+        final AbstractWorkItemClient client = fetchClient();
         final String id = task.getId();
-        final WorkItemModel workItemModel = useClient().getWorkItem(Integer.parseInt(id));
+        final WorkItemModel workItemModel = client.getWorkItem(Integer.parseInt(id));
         final String workItemType = workItemModel.workItemType();
-        final Map<String, WorkItemType> workItemTypes = useClient().getWorkItemTypes();
+        //final Map<String, WorkItemType> workItemTypes = client.getWorkItemTypes();
         final WorkItemType typeDef = workItemTypes.get(workItemType);
         if (typeDef != null) {
             final Set<CustomTaskState> result = new HashSet<>();
@@ -355,24 +400,46 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Override
     public void setTaskState(@NotNull Task task, @NotNull CustomTaskState state) throws Exception {
         final String id = task.getId();
-        final WorkItemModel workItemModel = useClient().updateWorkItemState(Integer.parseInt(id), state.getId());
+        final WorkItemModel workItemModel = fetchClient().updateWorkItemState(Integer.parseInt(id), state.getId());
         super.setTaskState(task, state);
     }
 
-     
-    /**
-     * Ensure a client is initialized
-     */
-    private void ensureClient() {
-        AbstractWorkItemClient client1 = useClient();
-        if (client1 == null) {
-            saveClient(new WorkItemLegacyClient(getOrganization(), getProject(), getPassword()));
-            useClient().setTop(top);
-//            try {
-//                setWorkItemTypes(client.getWorkItemTypes());
-//            } catch (AzDException e) {
-//                LOG.error("Failed to fetch work item types", e);
+    private Optional<Double> getTimeSpent(String timeSpent) {
+        final Matcher matcher = TIME_SPENT_PATTERN.matcher(timeSpent);
+        if (matcher.find()) {
+            final int hours = Integer.parseInt(matcher.group(1));
+            final int minutes = Integer.parseInt(matcher.group(2));
+            final int totalMinutes = hours * 60 + minutes;
+            final double value = totalMinutes / (double) 60;
+            return Optional.of(value);
+        } else {
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public void updateTimeSpent(@NotNull LocalTask task, @NotNull String timeSpent, @NotNull String comment) throws Exception {
+        final String id = task.getId();
+
+        if (!timeTrackFieldName.isEmpty()) {
+            //final long totalTimeSpent = task.getTotalTimeSpent();
+
+//            if (totalTimeSpent>0) {
+//                final double l = TimeUnit.MILLISECONDS.toMinutes(totalTimeSpent) / (double) 60;
+//                fetchClient().updateWorkItem(Integer.parseInt(id), timeTrackFieldName, "%.2f".formatted(l));
 //            }
+            getTimeSpent(timeSpent).ifPresentOrElse(v -> {
+                if (v > 0) {
+                    try {
+                        fetchClient().updateWorkItem(Integer.parseInt(id), timeTrackFieldName, "%.2f".formatted(v));
+                    } catch (WorkItemException e) {
+                        LOG.error("Error updating task ", e);
+                    }
+                }
+            }, () -> LOG.error("%s does not conform to the pattern ".formatted(timeSpent)));
+        }
+        if (!comment.isEmpty()) {
+            fetchClient().addWorkItemComment(Integer.parseInt(id), comment);
         }
     }
 
@@ -394,7 +461,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             String url = WorkItemClient.toURL(this.organization);
             setUrl(url);
         }
-        saveClient(null); // Reset client when config changes
+        clearClient();
     }
 
     private String project = "";
@@ -406,7 +473,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setProject(String project) {
         this.project = project;
-        saveClient(null); // Reset client when config changes
+        clearClient();
     }
 
 
@@ -416,27 +483,25 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return this;
     }
 
-//    public Map<String, WorkItemType> getWorkItemTypes() {
-//        return workItemTypes;
-//    }
 
-    
     @Attribute("BugWorkItemType")
     public String getBugWorkItemType() {
         return taskTypeToWorkItemTypeMap.get(TaskType.BUG);
     }
-    
+
     public void setBugWorkItemType(String bugWorkItemType) {
         map(TaskType.BUG, bugWorkItemType);
     }
-    
+
     @Attribute("FeatureWorkItemType")
     public String getFeatureWorkItemType() {
         return taskTypeToWorkItemTypeMap.get(TaskType.FEATURE);
     }
+
     public void setFeatureWorkItemType(String featureWorkItemType) {
-        map(TaskType.FEATURE, featureWorkItemType);
+        final AzDoRepository map = map(TaskType.FEATURE, featureWorkItemType);
     }
+
     private String team = "";
 
     @Attribute("team")
@@ -446,7 +511,19 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setTeam(String team) {
         this.team = team;
-        saveClient(null);
+        clearClient();
+    }
+
+    public String timeTrackFieldName = "";
+
+    @Attribute("TimeTrackingFieldName")
+    public String getTimeTrackFieldName() {
+        return timeTrackFieldName;
+    }
+
+    public void setTimeTrackFieldName(String timeTrackFieldName) {
+        this.timeTrackFieldName = timeTrackFieldName;
+        clearClient();
     }
 
     private int top = 100;
@@ -458,13 +535,13 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setTop(int top) {
         this.top = top;
-        saveClient(null);
+        clearClient();
     }
 
     @Override
     public void setPassword(String password) {
         super.setPassword(password);
-        saveClient(null); // Reset client when config changes
+        clearClient();
     }
 
     @Override
@@ -481,7 +558,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     protected int getFeatures() {
-        return super.getFeatures() | STATE_UPDATING ;
+        return super.getFeatures() | STATE_UPDATING | TIME_MANAGEMENT;
     }
 
     @Override
@@ -490,18 +567,19 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         if (!super.equals(o)) return false;
         AzDoRepository that = (AzDoRepository) o;
         return Objects.equals(getOrganization(), that.getOrganization())
-               && Objects.equals(getProject(), that.getProject())
-               && Objects.equals(getTeam(), that.getTeam())
-               && Objects.equals(getPassword(), that.getPassword())
-               && Objects.equals(getTop(), that.getTop())
-               && Objects.equals(getBugWorkItemType(), that.getBugWorkItemType())
-               && Objects.equals(getFeatureWorkItemType(), that.getFeatureWorkItemType())
+                && Objects.equals(getProject(), that.getProject())
+                && Objects.equals(getTeam(), that.getTeam())
+                && Objects.equals(getPassword(), that.getPassword())
+                && Objects.equals(getTop(), that.getTop())
+                && Objects.equals(getBugWorkItemType(), that.getBugWorkItemType())
+                && Objects.equals(getFeatureWorkItemType(), that.getFeatureWorkItemType())
+                && Objects.equals(getTimeTrackFieldName(), that.getTimeTrackFieldName())
                 ;
 
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getOrganization(), getProject(), getTeam(), getPassword(), getTop(),getBugWorkItemType(),getFeatureWorkItemType());
+        return Objects.hash(getOrganization(), getProject(), getTeam(), getPassword(), getTop(), getBugWorkItemType(), getFeatureWorkItemType(), getTimeTrackFieldName());
     }
 }

@@ -36,7 +36,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     private  ComboBoxUpdater teams;
     private  ComboBoxUpdater workTypesForBug;
     private  ComboBoxUpdater workTypesForFeature;
-
+    private  ComboBoxUpdater timeTrackingFieldName;
     private IntegerField topField;
     
     public AzDoRepositoryEditor(Project project, AzDoRepository repository, Consumer<? super AzDoRepository> changeListener) {
@@ -63,7 +63,8 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         teams.update();
         workTypesForBug.update();
         workTypesForFeature.update();
-        
+        timeTrackingFieldName.update();;
+
         final int value = topField.getValue();
         if (value > 0) {
             myRepository.setTop(value);
@@ -137,6 +138,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         if (myRepository.canBeAccessed()) {
             projects.queue();
             teams.queue();
+            timeTrackingFieldName.queue();
         }
         myTestButton.setEnabled(myRepository.canBeAccessed());
     }
@@ -182,6 +184,8 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
                 }
             }
         });
+
+        timeTrackingFieldName=new ComboBoxUpdater("fields for time track",myRepository::getTimeTrackFieldName,myRepository::setTimeTrackFieldName, myRepository::getWorkItemFieldsForTimeTrack);
         updateProjectNamesInCombo();
 //        UIUtil.invokeLaterIfNeeded(this::updateProjectNamesInCombo);
         // Help text
@@ -207,6 +211,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
                 .addLabeledComponent("Max items:", topField)
                 .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
                 .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
+                .addLabeledComponent("Field for time tracking:", timeTrackingFieldName.getCombo())
                 .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
 
