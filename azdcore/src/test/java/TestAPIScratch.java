@@ -1,3 +1,4 @@
+import org.azd.authentication.AccessTokenCredential;
 import org.azd.authentication.PersonalAccessTokenCredential;
 import org.azd.common.types.JsonPatchDocument;
 import org.azd.core.CoreRequestBuilder;
@@ -5,13 +6,17 @@ import org.azd.core.types.Processes;
 import org.azd.core.types.Projects;
 import org.azd.core.types.WebApiTeams;
 import org.azd.enums.Instance;
+import org.azd.enums.WorkItemExpand;
 import org.azd.exceptions.AzDException;
-import org.azd.interfaces.CoreDetails;
-import org.azd.interfaces.WorkItemTrackingDetails;
+//import org.azd.interfaces.CoreDetails;
+//import org.azd.interfaces.WorkItemTrackingDetails;
+import org.azd.helpers.workitemtracking.WorkItemTrackingHelpersRequestBuilder;
 import org.azd.serviceclient.AzDService;
 import org.azd.serviceclient.AzDServiceClient;
-import org.azd.utils.AzDClientApi;
+//import org.azd.utils.AzDClientApi;
+import org.azd.workitemtracking.comments.CommentsRequestBuilder;
 import org.azd.workitemtracking.types.*;
+import org.azd.workitemtracking.workitems.WorkItemsRequestBuilder;
 import org.azdtasks.core.WorkItemField;
 import org.azdtasks.core.WorkItemModel;
 import org.azdtasks.core.client.WorkItemClient;
@@ -30,10 +35,10 @@ public class TestAPIScratch {
     @Ignore
     public void testBug(){
         final String org_not_exists = "bad_name";
-        final String organization = "Healthcare-Solutions";
+        final String organization = "";
         String token=System.getProperty("t");
 
-        AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(org_not_exists), token)).buildClient().helpers().workItemTracking().workItemTypes();
+        AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization), token)).buildClient().helpers().workItemTracking().workItemTypes();
         try {
             final CoreRequestBuilder builder = AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(org_not_exists), token)).buildClient().core();
             System.out.println(builder);
@@ -52,6 +57,34 @@ public class TestAPIScratch {
     }
 
 
+
+    @Test
+    @Ignore
+    public void test1() throws AzDException {
+        String organization =System.getProperty("o");
+
+        String project = System.getProperty("p");
+        String personalAccessToken =System.getProperty("t");
+    //    personalAccessToken="wrwerwrwrewrwerwerwer";
+        AzDServiceClient azDServiceClient = AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization),project, personalAccessToken)).buildClient();
+        WorkItemClient workItemClient = new WorkItemClient(organization, project, personalAccessToken);
+        Map<String, WorkItemField> workItemFields = workItemClient.getWorkItemFields(v -> true);
+        WorkItemTrackingHelpersRequestBuilder workItemTrackingHelpersRequestBuilder = azDServiceClient.helpers().workItemTracking();
+        CommentsRequestBuilder comments = workItemTrackingHelpersRequestBuilder.comments();
+//        comments.add("this is my comment ",26722);
+        CommentList list = comments.list(26722);
+        List<Comment> comments1 = list.getComments();
+        for (Comment comment : comments1) {
+            System.out.println(comment);
+        }
+        System.out.println(list);
+        WorkItemsRequestBuilder workItemsRequestBuilder = workItemTrackingHelpersRequestBuilder.workItems();
+        WorkItem workItem = workItemsRequestBuilder.get(26722,v->v.queryParameters.expand= WorkItemExpand.ALL);
+
+
+        System.out.println(workItem);
+
+    }
     @Test
      @Ignore
     public void test2() throws AzDException {
@@ -67,8 +100,8 @@ public class TestAPIScratch {
 
         System.out.println(workItemFields);
 //        // Connect Azure DevOps API with the organisation name and personal access token.
-        final AzDClientApi azDClientApi = new AzDClientApi(organisation, project, personalAccessToken);
-        WorkItemTrackingDetails workItemTrackingApi = azDClientApi.getWorkItemTrackingApi();
+//        final AzDClientApi azDClientApi = new AzDClientApi(organisation, project, personalAccessToken);
+//        WorkItemTrackingDetails workItemTrackingApi = azDClientApi.getWorkItemTrackingApi();
 
 //        final CoreDetails coreApi = azDClientApi.getCoreApi();
 //        List<WorkItemField> workItemFields = azDClientApi.getWorkItemTrackingApi().getWorkItemFields().getWorkItemFields();
@@ -87,8 +120,8 @@ public class TestAPIScratch {
 //        final WorkItemTrackingDetails workItemTrackingApi = azDClientApi.getWorkItemTrackingApi();
         //workItemTrackingApi.addWorkItemAttachment()
         int id = 16876;
-        final WorkItem workItem = workItemTrackingApi.getWorkItem(1);
-        workItemTrackingApi.updateWorkItem(id,Map.of("System.History","this is a test"));
+//        final WorkItem workItem = workItemTrackingApi.getWorkItem(1);
+//        workItemTrackingApi.updateWorkItem(id,Map.of("System.History","this is a test"));
       //  final String systemState = workItem.getFields().getSystemState();
 //        final WorkItemTypes workItemTypes1 = workItemTrackingApi.getWorkItemTypes();
 //

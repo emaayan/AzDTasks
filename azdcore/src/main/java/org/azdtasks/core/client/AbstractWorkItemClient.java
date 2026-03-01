@@ -149,9 +149,8 @@ public abstract class AbstractWorkItemClient {
         return workItem;
     }
 
-    public WorkItemModel addWorkItemComment(int id, String text) throws WorkItemException {
+    public void addWorkItemComment(int id, String text) throws WorkItemException {
         final WorkItemModel workItemModel = updateWorkItem(id, "System.History", text);
-        return workItemModel;
     }
 
     public WorkItemModel updateWorkItem(int id, String fieldName, String value) throws WorkItemException {
@@ -253,6 +252,11 @@ public abstract class AbstractWorkItemClient {
                 .build();
         final CommentList comments = build.execute(CommentList.class);
         final List<Comment> comments1 = comments.getComments();
+        final WorkItemComments workItemComments = getWorkItemComments(comments1);
+        return workItemComments;
+    }
+
+    protected   WorkItemComments getWorkItemComments(List<Comment> comments1) {
         final List<WorkItemComments.WorkItemComment> list = comments1.stream().map(v -> new WorkItemComments.WorkItemComment(v.getId(), v.getText(), v.getCreatedBy().getDisplayName(), v.getCreatedDate())).toList();
         final WorkItemComments workItemComments = new WorkItemComments(list);
         return workItemComments;

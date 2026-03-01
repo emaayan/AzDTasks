@@ -103,7 +103,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     private @NotNull AbstractWorkItemClient createClient(String project) {
-        final AbstractWorkItemClient client = new WorkItemLegacyClient(getOrganization(), project, getPassword());
+        final AbstractWorkItemClient client = new WorkItemClient(getOrganization(), project, getPassword());
         client.setTop(top);
         return client;
     }
