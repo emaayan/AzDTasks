@@ -8,16 +8,15 @@ import com.intellij.openapi.util.NlsSafe;
 import com.intellij.tasks.*;
 import com.intellij.tasks.impl.BaseRepository;
 import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
+import com.intellij.ui.IconManager;
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xmlb.annotations.Tag;
-import icons.TasksIcons;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.azd.exceptions.AzDException;
 
 import org.azdtasks.core.*;
 import org.azdtasks.core.client.AbstractWorkItemClient;
 import org.azdtasks.core.client.WorkItemClient;
-import org.azdtasks.core.client.WorkItemLegacyClient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
@@ -35,15 +34,48 @@ import java.util.stream.Collectors;
 public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
-    private Map<String, WorkItemType> workItemTypes=new HashMap<>();
 
     public static boolean isEmpty(String s) {
         return s == null || s.isEmpty();
     }
 
-    private transient AbstractWorkItemClient client = null;
+    //Categories are sorted by their logical order
+    private enum Category {
+
+        Proposed(), InProgress(), Resolved(), Completed(true), Removed(true);
+        private final boolean isClosed;
+
+        public static Comparator<Category> getComparator() {
+            return Comparator.comparing(Category::isClosed).thenComparing(Enum::ordinal);
+        }
+
+        Category() {
+            this(false);
+        }
+
+        Category(boolean isClosed) {
+            this.isClosed = isClosed;
+        }
+
+        public boolean isClosed() {
+            return isClosed;
+        }
+
+    }
+
+    private final static Set<String> defClosedStates = Set.of("Closed", "Done", "Removed", "Resolved");
+    private Map<String, WorkItemType> workItemTypes = new HashMap<>();
     private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
     private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
+
+    private transient AbstractWorkItemClient client = null;
+
+    private final EnumMap<TaskType, Icon> icons = new EnumMap<>(Map.of(
+            TaskType.BUG, IconManager.getInstance().getIcon("META-INF/bug.svg", this.getClass().getClassLoader())
+            , TaskType.EXCEPTION, IconManager.getInstance().getIcon("META-INF/exception.svg", this.getClass().getClassLoader())
+            , TaskType.FEATURE, IconManager.getInstance().getIcon("META-INF/feature.svg", this.getClass().getClassLoader())
+            , TaskType.OTHER, IconManager.getInstance().getIcon("META-INF/misc.svg", this.getClass().getClassLoader())
+    ));
 
     //required for reflection
     public AzDoRepository() {
@@ -80,7 +112,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             try {
                 workItemTypes = c.getWorkItemTypes();
             } catch (WorkItemException e) {
-                LOG.error("Failed getting workItems",e);
+                LOG.error("Failed getting workItems", e);
             }
             setClient(c);
             return c;
@@ -272,7 +304,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             @NotNull
             @Override
             public String getPresentableName() {
-                return "%s: %s".formatted(getId(), getSummary());
+                return "%s %s: %s".formatted(workItemModel.workItemType(), getId(), getSummary());
             }
 
             @Override
@@ -310,14 +342,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
             @Override
             public @NotNull Icon getIcon() {
-                return switch (getType()) {
-                    case BUG -> TasksIcons.Bug;
-                    case EXCEPTION -> TasksIcons.Exception;
-                    case FEATURE -> AllIcons.Nodes.Favorite;
-                    case OTHER -> AllIcons.FileTypes.Any_type;
-                    //: EmptyIcon.ICON_0;
-                };
-                //return TasksIcons.Bug;
+                final TaskType type = getType();
+                final Icon icon = AzDoRepository.this.icons.getOrDefault(type, AllIcons.FileTypes.Any_type);
+                return icon;
             }
 
 
@@ -349,11 +376,27 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             @Override
             public boolean isClosed() {
                 final String state = workItemModel.state();
-                return state != null && (state.equalsIgnoreCase("Closed") ||
-                        state.equalsIgnoreCase("Done") ||
-                        state.equalsIgnoreCase("Removed") ||
-                        state.equalsIgnoreCase("Resolved")
-                );
+                if (state != null) {
+                    final WorkItemType workItemType = workItemTypes.get(workItemModel.workItemType());
+                    if (workItemType != null) {
+                        final Map<String, String> states = workItemType.states();
+                        if (states != null) {
+                            final String cat = states.getOrDefault(state, "");
+                            if (!cat.isEmpty()) {
+                                final Category category = Category.valueOf(cat);
+                                return category.isClosed();
+                            } else {
+                                return defClosedStates.contains(state);
+                            }
+                        } else {
+                            return defClosedStates.contains(state);
+                        }
+                    } else {
+                        return defClosedStates.contains(state);
+                    }
+                } else {
+                    return false;
+                }
             }
 
             @Override
@@ -381,14 +424,28 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         final String id = task.getId();
         final WorkItemModel workItemModel = client.getWorkItem(Integer.parseInt(id));
         final String workItemType = workItemModel.workItemType();
-        //final Map<String, WorkItemType> workItemTypes = client.getWorkItemTypes();
         final WorkItemType typeDef = workItemTypes.get(workItemType);
         if (typeDef != null) {
-            final Set<CustomTaskState> result = new HashSet<>();
+            final Set<CustomTaskState> result = new LinkedHashSet<>();
             final Map<String, String> states = typeDef.states();
             if (states != null) {
-                for (String state : states.keySet()) {
-                    result.add(new CustomTaskState(state, state));
+                final List<Map.Entry<String, String>> stateEntries = new ArrayList<>(states.entrySet());
+                try {
+                    stateEntries.sort((o1, o2) -> {
+                        String value = o1.getValue();
+                        String value1 = o2.getValue();
+                        Category category = Category.valueOf(value);
+                        Category category1 = Category.valueOf(value1);
+                        return Category.getComparator().compare(category, category1);
+                    });
+                } catch (Exception e) {
+                    LOG.error("Failed to sort states", e);
+                }
+                for (Map.Entry<String, String> entry : stateEntries) {
+                    final String state = entry.getKey();
+                    final String category = entry.getValue();
+                    final CustomTaskState e = new CustomTaskState(state, "%s (%s)".formatted(state, category));
+                    result.add(e);
                 }
             }
             return result;

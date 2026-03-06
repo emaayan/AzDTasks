@@ -1,7 +1,6 @@
 package org.azdtasks.plugin;
 
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
@@ -32,13 +31,13 @@ import java.util.function.Supplier;
 public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     private static final Logger LOG = Logger.getInstance(AzDoRepositoryEditor.class);
     private JBTextField organizationUrlField;
-    private  ComboBoxUpdater projects;
-    private  ComboBoxUpdater teams;
-    private  ComboBoxUpdater workTypesForBug;
-    private  ComboBoxUpdater workTypesForFeature;
-    private  ComboBoxUpdater timeTrackingFieldName;
+    private ComboBoxUpdater projects;
+    private ComboBoxUpdater teams;
+    private ComboBoxUpdater workTypesForBug;
+    private ComboBoxUpdater workTypesForFeature;
+    private ComboBoxUpdater timeTrackingFieldName;
     private IntegerField topField;
-    
+
     public AzDoRepositoryEditor(Project project, AzDoRepository repository, Consumer<? super AzDoRepository> changeListener) {
         super(project, repository, changeListener);
         LOG.info("Started Editor");
@@ -55,7 +54,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         myShareUrlCheckBox.setVisible(false);
     }
 
-    
+
     @Override
     public void apply() {
         myRepository.setOrganization(organizationUrlField.getText().trim());
@@ -63,7 +62,8 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         teams.update();
         workTypesForBug.update();
         workTypesForFeature.update();
-        timeTrackingFieldName.update();;
+        timeTrackingFieldName.update();
+        ;
 
         final int value = topField.getValue();
         if (value > 0) {
@@ -80,39 +80,35 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         LOG.info("Connection tested " + connectionSuccessful);
         if (connectionSuccessful) {
             updateProjectNamesInCombo();
-//            Messages.showInfoMessage(
-//                    myProject,
-//                    "Connection to Azure DevOps is successful!",
-//                    "Connection Test"
-//            );
         }
     }
 
     private class ComboBoxUpdater extends TaskUiUtil.ComboBoxUpdater<String> {
-        
+
         private final Supplier<String> selectedItemSupplier;
         private final Consumer<String> selectedItemConsumer;
-        private final Callable<Map<String, String>> onListFetche;
-        ComboBoxUpdater( String title, Supplier<String> selectedItemSupplier, Consumer<String> selectedItemConsumer, Callable<Map<String, String>> onListFetched) {
+        private final Callable<Map<String, String>> onListFetcher;
+
+        ComboBoxUpdater(String title, Supplier<String> selectedItemSupplier, Consumer<String> selectedItemConsumer, Callable<Map<String, String>> onListFetched) {
             super(AzDoRepositoryEditor.this.myProject, "Getting " + title, new ComboBox<>(200));
             myComboBox.setRenderer(SimpleListCellRenderer.create("", String::toString));
             this.selectedItemSupplier = selectedItemSupplier;
             this.selectedItemConsumer = selectedItemConsumer;
-            this.onListFetche = onListFetched;
+            this.onListFetcher = onListFetched;
             installListener(myComboBox);
         }
 
-        
+
         @Override
         protected @NotNull List<String> fetch(@NotNull ProgressIndicator indicator) throws Exception {
-            final Map<String, String> projects =onListFetche.call();
+            final Map<String, String> projects = onListFetcher.call();
             return new ArrayList<>(projects.values());
         }
 
 
-        public void update(){
-            final Object selectedItem =getCombo().getSelectedItem();
-            if(selectedItem!=null){
+        public void update() {
+            final Object selectedItem = getCombo().getSelectedItem();
+            if (selectedItem != null) {
                 selectedItemConsumer.consume(selectedItem.toString());
             }
         }
@@ -129,7 +125,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         @Override
         protected void handleError() {
             super.handleError();
-     //       myComboBox.removeAllItems();
+            //       myComboBox.removeAllItems();
         }
 
     }
@@ -147,45 +143,45 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     @Override
     protected JComponent createCustomPanel() {
         LOG.info("Building panel");
-                 
+
         organizationUrlField = new JBTextField(myRepository.getOrganization());
         organizationUrlField.setToolTipText("Azure DevOps organization");
         organizationUrlField.getEmptyText().setText("Organization");
         installListener(organizationUrlField);
-        
+
         topField = new IntegerField("Max query results", 1, 200);
         topField.setCanBeEmpty(false);
         topField.setDefaultValue(myRepository.getTop());
         topField.setValue(myRepository.getTop());
         installListener(topField);
-        
-        projects = new ComboBoxUpdater( "projects", myRepository::getProject, myRepository::setProject, () -> myRepository.getProjects().get());
-        teams = new ComboBoxUpdater( "teams", myRepository::getTeam, myRepository::setTeam, () -> myRepository.getTeams().get());
+
+        projects = new ComboBoxUpdater("Projects", myRepository::getProject, myRepository::setProject, () -> myRepository.getProjects().get());
+        teams = new ComboBoxUpdater("Teams", myRepository::getTeam, myRepository::setTeam, () -> myRepository.getTeams().get());
         final Callable<Map<String, String>> mapCallable = () -> {
             final Object selectedItem = projects.getCombo().getSelectedItem();
-            if (selectedItem!=null) {
+            if (selectedItem != null) {
                 final String project = selectedItem.toString();
                 final Map<String, String> workItemTypes = myRepository.getWorkItemTypes(project);
                 return workItemTypes;
-            }else{
+            } else {
                 return Map.of();
             }
         };
-        
-        workTypesForBug = new ComboBoxUpdater("workTypes for bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
-        workTypesForFeature = new ComboBoxUpdater( "workTypes for feature", myRepository::getFeatureWorkItemType, myRepository::setFeatureWorkItemType, mapCallable);
+
+        workTypesForBug = new ComboBoxUpdater("Work Items for Bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
+        workTypesForFeature = new ComboBoxUpdater("Work Items for Feature", myRepository::getFeatureWorkItemType, myRepository::setFeatureWorkItemType, mapCallable);
         projects.getCombo().addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED) {
                 try {
                     workTypesForBug.queue();
                     workTypesForFeature.queue();
-                }catch (Throwable t){
-                    LOG.error("Error",t);
+                } catch (Throwable t) {
+                    LOG.error("Error", t);
                 }
             }
         });
 
-        timeTrackingFieldName=new ComboBoxUpdater("fields for time track",myRepository::getTimeTrackFieldName,myRepository::setTimeTrackFieldName, myRepository::getWorkItemFieldsForTimeTrack);
+        timeTrackingFieldName = new ComboBoxUpdater("Fields for time tracking", myRepository::getTimeTrackFieldName, myRepository::setTimeTrackFieldName, myRepository::getWorkItemFieldsForTimeTrack);
         updateProjectNamesInCombo();
 //        UIUtil.invokeLaterIfNeeded(this::updateProjectNamesInCombo);
         // Help text
@@ -215,7 +211,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
                 .addComponentFillVertically(new JPanel(), 0)
                 .getPanel();
 
-        return new JBScrollPane(panel,JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        return new JBScrollPane(panel, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
 
     }

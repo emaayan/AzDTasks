@@ -19,6 +19,7 @@ import org.azd.workitemtracking.types.*;
 import org.azd.workitemtracking.workitems.WorkItemsRequestBuilder;
 import org.azdtasks.core.WorkItemField;
 import org.azdtasks.core.WorkItemModel;
+import org.azdtasks.core.WorkItemType;
 import org.azdtasks.core.client.WorkItemClient;
 import org.azdtasks.core.client.WorkItemLegacyClient;
 import org.junit.Ignore;
@@ -68,6 +69,7 @@ public class TestAPIScratch {
     //    personalAccessToken="wrwerwrwrewrwerwerwer";
         AzDServiceClient azDServiceClient = AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization),project, personalAccessToken)).buildClient();
         WorkItemClient workItemClient = new WorkItemClient(organization, project, personalAccessToken);
+        Map<String, WorkItemType> workItemTypes = workItemClient.getWorkItemTypes();
         Map<String, WorkItemField> workItemFields = workItemClient.getWorkItemFields(v -> true);
         WorkItemTrackingHelpersRequestBuilder workItemTrackingHelpersRequestBuilder = azDServiceClient.helpers().workItemTracking();
         CommentsRequestBuilder comments = workItemTrackingHelpersRequestBuilder.comments();
