@@ -4,7 +4,9 @@ package org.azdtasks.plugin;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.tasks.*;
 import com.intellij.tasks.impl.BaseRepository;
 import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
@@ -140,6 +142,26 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return client;
     }
 
+    @Override
+    public @Nullable CancellableConnection createCancellableConnection() {
+        return new CancellableConnection() {
+            CompletableFuture<Map<String, String>> projects;
+
+            @Override
+            protected void doTest() throws Exception {
+                projects = getProjects();
+                projects.get();
+            }
+
+            @Override
+            public void cancel() {
+                if (projects != null) {
+                    projects.cancel(true);
+                }
+            }
+        };
+    }
+
 
     @NotNull
     @Override
@@ -177,6 +199,24 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         }
     }
 
+    @Override
+    public @NlsContexts.Label String getPresentableName() {
+        final String url = getUrl();
+        if (StringUtil.isNotEmpty(url)){
+            final String project = getProject();
+            final String team = getTeam();
+            String name=url;
+            if (StringUtil.isNotEmpty(project)){
+                name+=" - "+project;
+            }
+            if (StringUtil.isNotEmpty(team)){
+                name+=" - "+team;
+            }
+            return name;
+        }else{
+            return TaskApiBundle.message("label.undefined");
+        }
+    }
 
     public @NotNull Map<String, String> getWorkItemFieldsForTimeTrack() throws WorkItemException {
         if (canBeAccessed()) {
@@ -217,7 +257,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 workItems = List.of();
             } else {
                 if (NumberUtils.isParsable(query)) {
-                    final WorkItemModel workItem = fetchClient().getWorkItem(Integer.parseInt(query));
+                    final int id = Integer.parseInt(query);
+                    final WorkItemModel workItem = fetchClient().getWorkItem(id);
                     workItems = workItem != null ? List.of(workItem) : List.of();
                 } else {
                     workItems = fetchClient().searchWorkItems(query, getTeam());
@@ -237,41 +278,35 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Override
     public Task findTask(@NotNull String id) throws Exception {
         try {
-            final int workItemId = Integer.parseInt(id);
-            final WorkItemModel workItem = fetchClient().getWorkItem(workItemId);
-            if (workItem == null) {
+            if (NumberUtils.isParsable(id)) {
+                final int workItemId = Integer.parseInt(id);
+                final WorkItemModel workItem = fetchClient().getWorkItem(workItemId);
+                final Task task = convertToTask(workItem);
+                return task;
+            } else {
                 return null;
             }
-            return convertToTask(workItem);
-        } catch (NumberFormatException e) {
-            LOG.warn("Invalid work item ID: " + id);
-            return null;
         } catch (AzDException e) {
             LOG.error("Failed to find work item " + id, e);
             throw new Exception("Failed to find work item: " + e.getMessage(), e);
         }
     }
 
-    @Override
-    public @Nullable CancellableConnection createCancellableConnection() {
-        return new CancellableConnection() {
-            CompletableFuture<Map<String, String>> projects;
-
-            @Override
-            protected void doTest() throws Exception {
-                projects = getProjects();
-                projects.get();
-            }
-
-            @Override
-            public void cancel() {
-                if (projects != null) {
-                    projects.cancel(true);
-                }
-            }
-        };
+    private final static String delim=";";
+    private String buildId(int id){
+        final String[] parts =new String[3];
+        parts[0]=getProject();
+        parts[1]=getTeam();
+        parts[2]=Integer.toString(id);
+        return String.join(delim,parts);
     }
 
+    @Override
+    public @Nullable String extractId(@NotNull String taskName) {
+        final String[] split = taskName.split(delim);
+        return split[2];
+        //return super.extractId(taskName);
+    }
 
     /**
      * Convert WorkItemModel to IntelliJ Task
@@ -281,7 +316,14 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             @NotNull
             @Override
             public String getId() {
-                return String.valueOf(workItemModel.id());
+                final String s =buildId(workItemModel.id());
+                return s;
+                //return String.valueOf(workItemModel.id());
+            }
+
+            @Override
+            public @NlsSafe @NotNull String getPresentableId() {
+                return getNumber();
             }
 
             @Override
@@ -304,7 +346,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             @NotNull
             @Override
             public String getPresentableName() {
-                return "%s %s: %s".formatted(workItemModel.workItemType(), getId(), getSummary());
+                return "%s %s: %s".formatted(workItemModel.workItemType(), getPresentableId(), getSummary());
             }
 
             @Override
@@ -421,7 +463,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Override
     public @NotNull @Unmodifiable Set<CustomTaskState> getAvailableTaskStates(@NotNull Task task) throws Exception {
         final AbstractWorkItemClient client = fetchClient();
-        final String id = task.getId();
+        final String id = task.getNumber();
         final WorkItemModel workItemModel = client.getWorkItem(Integer.parseInt(id));
         final String workItemType = workItemModel.workItemType();
         final WorkItemType typeDef = workItemTypes.get(workItemType);
@@ -456,10 +498,11 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public void setTaskState(@NotNull Task task, @NotNull CustomTaskState state) throws Exception {
-        final String id = task.getId();
+        final String id = task.getNumber();
         final WorkItemModel workItemModel = fetchClient().updateWorkItemState(Integer.parseInt(id), state.getId());
         super.setTaskState(task, state);
     }
+
 
     private Optional<Double> getTimeSpent(String timeSpent) {
         final Matcher matcher = TIME_SPENT_PATTERN.matcher(timeSpent);
@@ -476,8 +519,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public void updateTimeSpent(@NotNull LocalTask task, @NotNull String timeSpent, @NotNull String comment) throws Exception {
-        final String id = task.getId();
-
+        final String id = task.getNumber();
+        final int id1 = Integer.parseInt(id);
         if (!timeTrackFieldName.isEmpty()) {
             //final long totalTimeSpent = task.getTotalTimeSpent();
 
@@ -488,7 +531,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             getTimeSpent(timeSpent).ifPresentOrElse(v -> {
                 if (v > 0) {
                     try {
-                        fetchClient().updateWorkItem(Integer.parseInt(id), timeTrackFieldName, "%.2f".formatted(v));
+                        fetchClient().updateWorkItem(id1, timeTrackFieldName, "%.2f".formatted(v));
                     } catch (WorkItemException e) {
                         LOG.error("Error updating task ", e);
                     }
@@ -496,7 +539,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             }, () -> LOG.error("%s does not conform to the pattern ".formatted(timeSpent)));
         }
         if (!comment.isEmpty()) {
-            fetchClient().addWorkItemComment(Integer.parseInt(id), comment);
+            fetchClient().addWorkItemComment(id1, comment);
         }
     }
 
