@@ -202,18 +202,18 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     @Override
     public @NlsContexts.Label String getPresentableName() {
         final String url = getUrl();
-        if (StringUtil.isNotEmpty(url)){
+        if (StringUtil.isNotEmpty(url)) {
             final String project = getProject();
             final String team = getTeam();
-            String name=url;
-            if (StringUtil.isNotEmpty(project)){
-                name+=" - "+project;
+            String name = url;
+            if (StringUtil.isNotEmpty(project)) {
+                name += " - " + project;
             }
-            if (StringUtil.isNotEmpty(team)){
-                name+=" - "+team;
+            if (StringUtil.isNotEmpty(team)) {
+                name += " - " + team;
             }
             return name;
-        }else{
+        } else {
             return TaskApiBundle.message("label.undefined");
         }
     }
@@ -292,20 +292,31 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         }
     }
 
-    private final static String delim=";";
-    private String buildId(int id){
-        final String[] parts =new String[3];
-        parts[0]=getProject();
-        parts[1]=getTeam();
-        parts[2]=Integer.toString(id);
-        return String.join(delim,parts);
+    private final static String delim = "-";
+
+    private String buildId(String id) {
+        final String formatted = "%s%s%s".formatted(getProject(), delim, id);
+        return formatted;
+
     }
 
     @Override
     public @Nullable String extractId(@NotNull String taskName) {
-        final String[] split = taskName.split(delim);
-        return split[2];
+//        final String[] split = taskName.split(delim);
+//        return split[1];
+        int i = taskName.lastIndexOf(delim);
+        final String s = i > 0 ? taskName.substring(i + 1) : taskName;
+        return s;
         //return super.extractId(taskName);
+    }
+
+    private static final String numDelim = " ";
+
+    public int parseNumberFromTaskNumber(Task task) {
+        final String number = task.getNumber();
+        int i = number.lastIndexOf(numDelim);
+        final String s = i > 0 ? number.substring(i + 1) : number;
+        return Integer.parseInt(s);
     }
 
     /**
@@ -315,21 +326,28 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return new Task() {
             @NotNull
             @Override
-            public String getId() {
-                final String s =buildId(workItemModel.id());
+            public String getId() { //maybe used in commit messages
+                final String s = buildId(getNumber());
                 return s;
                 //return String.valueOf(workItemModel.id());
             }
 
             @Override
-            public @NlsSafe @NotNull String getPresentableId() {
-                return getNumber();
+            public @NotNull String getNumber() {//used for updating time and tasks staes
+                return "%s%s%d".formatted(workItemModel.workItemType(), numDelim, workItemModel.id());
             }
 
             @Override
-            public @NotNull String getNumber() {
-                return String.valueOf(workItemModel.id());
+            public @NlsSafe @NotNull String getPresentableId() {//used for change list names, and commit message
+                return "%s %s".formatted(getProject(), getNumber());
             }
+
+            @NotNull
+            @Override
+            public String getPresentableName() {//use for the search box
+                return "%s: %s".formatted(getPresentableId(), getSummary());
+            }
+
 
             @NotNull
             @Override
@@ -343,11 +361,6 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 return workItemModel.description();
             }
 
-            @NotNull
-            @Override
-            public String getPresentableName() {
-                return "%s %s: %s".formatted(workItemModel.workItemType(), getPresentableId(), getSummary());
-            }
 
             @Override
             public Comment @NotNull [] getComments() {
@@ -376,7 +389,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                         };
                     }
                 } else {
-                    comments = new Comment[0];
+                    comments = Comment.EMPTY_ARRAY;
                 }
                 return comments;
             }
@@ -460,11 +473,12 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         };
     }
 
+
     @Override
     public @NotNull @Unmodifiable Set<CustomTaskState> getAvailableTaskStates(@NotNull Task task) throws Exception {
         final AbstractWorkItemClient client = fetchClient();
-        final String id = task.getNumber();
-        final WorkItemModel workItemModel = client.getWorkItem(Integer.parseInt(id));
+        final int id = parseNumberFromTaskNumber(task);
+        final WorkItemModel workItemModel = client.getWorkItem(id);
         final String workItemType = workItemModel.workItemType();
         final WorkItemType typeDef = workItemTypes.get(workItemType);
         if (typeDef != null) {
@@ -498,8 +512,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public void setTaskState(@NotNull Task task, @NotNull CustomTaskState state) throws Exception {
-        final String id = task.getNumber();
-        final WorkItemModel workItemModel = fetchClient().updateWorkItemState(Integer.parseInt(id), state.getId());
+        final int id = parseNumberFromTaskNumber(task);
+        final WorkItemModel workItemModel = fetchClient().updateWorkItemState(id, state.getId());
         super.setTaskState(task, state);
     }
 
@@ -519,8 +533,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public void updateTimeSpent(@NotNull LocalTask task, @NotNull String timeSpent, @NotNull String comment) throws Exception {
-        final String id = task.getNumber();
-        final int id1 = Integer.parseInt(id);
+        final int id = parseNumberFromTaskNumber(task);
         if (!timeTrackFieldName.isEmpty()) {
             //final long totalTimeSpent = task.getTotalTimeSpent();
 
@@ -531,7 +544,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             getTimeSpent(timeSpent).ifPresentOrElse(v -> {
                 if (v > 0) {
                     try {
-                        fetchClient().updateWorkItem(id1, timeTrackFieldName, "%.2f".formatted(v));
+                        fetchClient().updateWorkItem(id, timeTrackFieldName, "%.2f".formatted(v));
                     } catch (WorkItemException e) {
                         LOG.error("Error updating task ", e);
                     }
@@ -539,7 +552,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             }, () -> LOG.error("%s does not conform to the pattern ".formatted(timeSpent)));
         }
         if (!comment.isEmpty()) {
-            fetchClient().addWorkItemComment(id1, comment);
+            fetchClient().addWorkItemComment(id, comment);
         }
     }
 
