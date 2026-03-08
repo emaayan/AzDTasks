@@ -314,9 +314,10 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public int parseNumberFromTaskNumber(Task task) {
         final String number = task.getNumber();
-        int i = number.lastIndexOf(numDelim);
-        final String s = i > 0 ? number.substring(i + 1) : number;
-        return Integer.parseInt(s);
+        return Integer.parseInt(number);
+//        int i = number.lastIndexOf(numDelim);
+//        final String s = i > 0 ? number.substring(i + 1) : number;
+//        return Integer.parseInt(s);
     }
 
     /**
@@ -334,18 +335,20 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
             @Override
             public @NotNull String getNumber() {//used for updating time and tasks staes
-                return "%s%s%d".formatted(workItemModel.workItemType(), numDelim, workItemModel.id());
+                //return "%s%s%d".formatted(workItemModel.workItemType(), numDelim, workItemModel.id());
+                return String.valueOf(workItemModel.id());
             }
 
             @Override
             public @NlsSafe @NotNull String getPresentableId() {//used for change list names, and commit message
-                return "%s %s".formatted(getProject(), getNumber());
+                //return "%s %s".formatted(getProject(), getNumber());
+                return "%s %s".formatted(workItemModel.workItemType(), getNumber());
             }
 
             @NotNull
             @Override
             public String getPresentableName() {//use for the search box
-                return "%s: %s".formatted(getPresentableId(), getSummary());
+                return "%s %s: %s".formatted(getProject(), getPresentableId(), getSummary());
             }
 
 
