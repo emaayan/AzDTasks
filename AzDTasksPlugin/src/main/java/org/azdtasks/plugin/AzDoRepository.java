@@ -295,7 +295,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     private final static String delim = "-";
 
     private String buildId(String id) {
-        final String formatted = "%s%s%s".formatted(getProject(), delim, id);
+        final String formatted = "%s %s%s%s".formatted(getRepositoryType().getName(), getProject(), delim, id);
         return formatted;
 
     }
@@ -304,9 +304,13 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     public @Nullable String extractId(@NotNull String taskName) {
 //        final String[] split = taskName.split(delim);
 //        return split[1];
-        int i = taskName.lastIndexOf(delim);
-        final String s = i > 0 ? taskName.substring(i + 1) : taskName;
-        return s;
+        if (taskName.startsWith(getRepositoryType().getName())) {
+            int i = taskName.lastIndexOf(delim);
+            final String s = i > 0 ? taskName.substring(i + 1) : taskName;
+            return s;
+        }else{
+            return null;
+        }
         //return super.extractId(taskName);
     }
 
