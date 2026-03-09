@@ -37,10 +37,6 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
 
-    public static boolean isEmpty(String s) {
-        return s == null || s.isEmpty();
-    }
-
     //Categories are sorted by their logical order
     private enum Category {
 
@@ -104,6 +100,13 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
     }
 
+    @NotNull
+    @Override
+    public BaseRepository clone() {
+        return new AzDoRepository(this);
+    }
+
+
     /**
      * Ensure a client is initialized
      */
@@ -163,10 +166,16 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
 
-    @NotNull
     @Override
-    public BaseRepository clone() {
-        return new AzDoRepository(this);
+    public boolean isConfigured() {
+        return canBeAccessed()
+                && StringUtil.isNotEmpty(getProject())
+                ;
+    }
+
+    public boolean canBeAccessed() {
+        return StringUtil.isNotEmpty(getOrganization())
+                && StringUtil.isNotEmpty(getPassword());
     }
 
     public CompletableFuture<Map<String, String>> getProjects() {
@@ -235,7 +244,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     public @NotNull Map<String, String> getWorkItemTypes(String project) throws WorkItemException {
-        if (canBeAccessed() && !isEmpty(project)) {
+        if (canBeAccessed() && StringUtil.isNotEmpty(project)) {
             final AbstractWorkItemClient client = createClient(project);
             final Map<String, WorkItemType> workItemTypes1 = client.getWorkItemTypes();
             final Map<String, String> m = workItemTypes1.keySet()
@@ -253,7 +262,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     public Task[] getIssues(@Nullable String query, int offset, int limit, boolean withClosed, @NotNull ProgressIndicator cancelled) throws Exception {
         try {
             final List<WorkItemModel> workItems;
-            if (isEmpty(query)) {
+            if (StringUtil.isEmpty(query)) {
                 workItems = List.of();
             } else {
                 if (NumberUtils.isParsable(query)) {
@@ -261,7 +270,16 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                     final WorkItemModel workItem = fetchClient().getWorkItem(id);
                     workItems = workItem != null ? List.of(workItem) : List.of();
                 } else {
-                    workItems = fetchClient().searchWorkItems(query, getTeam());
+                    final String s = """
+                            SELECT [System.Id]
+                            FROM WorkItems
+                            WHERE [System.TeamProject] = '%s' AND ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
+                            ORDER BY [System.ChangedDate] DESC
+                            """;
+                    final String escapedSearch = query.replace("'", "''");
+
+                    final String formatted = s.formatted(getProject(),escapedSearch, escapedSearch);
+                    workItems = fetchClient().executeQuery(getTeam(), formatted);
                 }
             }
             return workItems.parallelStream()
@@ -302,26 +320,18 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public @Nullable String extractId(@NotNull String taskName) {
-//        final String[] split = taskName.split(delim);
-//        return split[1];
         if (taskName.startsWith(getRepositoryType().getName())) {
             int i = taskName.lastIndexOf(delim);
             final String s = i > 0 ? taskName.substring(i + 1) : taskName;
             return s;
-        }else{
+        } else {
             return null;
         }
-        //return super.extractId(taskName);
     }
-
-    private static final String numDelim = " ";
 
     public int parseNumberFromTaskNumber(Task task) {
         final String number = task.getNumber();
         return Integer.parseInt(number);
-//        int i = number.lastIndexOf(numDelim);
-//        final String s = i > 0 ? number.substring(i + 1) : number;
-//        return Integer.parseInt(s);
     }
 
     /**
@@ -331,21 +341,18 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return new Task() {
             @NotNull
             @Override
-            public String getId() { //maybe used in commit messages
+            public String getId() {
                 final String s = buildId(getNumber());
                 return s;
-                //return String.valueOf(workItemModel.id());
             }
 
             @Override
-            public @NotNull String getNumber() {//used for updating time and tasks staes
-                //return "%s%s%d".formatted(workItemModel.workItemType(), numDelim, workItemModel.id());
+            public @NotNull String getNumber() {//used for updating time and tasks stats
                 return String.valueOf(workItemModel.id());
             }
 
             @Override
             public @NlsSafe @NotNull String getPresentableId() {//used for change list names, and commit message
-                //return "%s %s".formatted(getProject(), getNumber());
                 return "%s %s".formatted(workItemModel.workItemType(), getNumber());
             }
 
@@ -542,12 +549,6 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     public void updateTimeSpent(@NotNull LocalTask task, @NotNull String timeSpent, @NotNull String comment) throws Exception {
         final int id = parseNumberFromTaskNumber(task);
         if (!timeTrackFieldName.isEmpty()) {
-            //final long totalTimeSpent = task.getTotalTimeSpent();
-
-//            if (totalTimeSpent>0) {
-//                final double l = TimeUnit.MILLISECONDS.toMinutes(totalTimeSpent) / (double) 60;
-//                fetchClient().updateWorkItem(Integer.parseInt(id), timeTrackFieldName, "%.2f".formatted(l));
-//            }
             getTimeSpent(timeSpent).ifPresentOrElse(v -> {
                 if (v > 0) {
                     try {
@@ -577,8 +578,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     public void setOrganization(String organization) {
         this.organization = organization;
-        if (!isEmpty(organization)) {
-            String url = WorkItemClient.toURL(this.organization);
+        if (StringUtil.isNotEmpty(organization)) {
+            final String url = WorkItemClient.toURL(this.organization);
             setUrl(url);
         }
         clearClient();
@@ -664,17 +665,6 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         clearClient();
     }
 
-    @Override
-    public boolean isConfigured() {
-        return canBeAccessed()
-                && !isEmpty(getProject())
-                ;
-    }
-
-    public boolean canBeAccessed() {
-        return !isEmpty(getOrganization())
-                && !isEmpty(getPassword());
-    }
 
     @Override
     protected int getFeatures() {
@@ -700,6 +690,13 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getOrganization(), getProject(), getTeam(), getPassword(), getTop(), getBugWorkItemType(), getFeatureWorkItemType(), getTimeTrackFieldName());
+        return Objects.hash(getOrganization()
+                , getProject()
+                , getTeam()
+                , getPassword()
+                , getTop()
+                , getBugWorkItemType()
+                , getFeatureWorkItemType()
+                , getTimeTrackFieldName());
     }
 }

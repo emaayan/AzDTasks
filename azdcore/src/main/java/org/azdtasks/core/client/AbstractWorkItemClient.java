@@ -240,38 +240,12 @@ public abstract class AbstractWorkItemClient {
         }
     }
 
-    protected WorkItemComments getCommentsFor(int id) throws AzDException {
-        final String url = toURL(getOrganization());
-        final PersonalAccessTokenCredential accessTokenCredential = new PersonalAccessTokenCredential(url, getProject(), getPersonalAccessToken());
-        final ClientRequest build = ClientRequest.builder(accessTokenCredential)
-                .baseInstance(accessTokenCredential.getOrganizationUrl())
-                .location("608aac0a-32e1-4493-a863-b9cf4566d257")
-                .area("wit")
-                .apiVersion("7.2-preview.4")
-                .serviceEndpoint("workItemId", id)
-                .build();
-        final CommentList comments = build.execute(CommentList.class);
-        final List<Comment> comments1 = comments.getComments();
-        final WorkItemComments workItemComments = getWorkItemComments(comments1);
-        return workItemComments;
-    }
+    protected abstract WorkItemComments getCommentsFor(int id) throws AzDException;
 
-    protected   WorkItemComments getWorkItemComments(List<Comment> comments1) {
+    protected WorkItemComments getWorkItemComments(List<Comment> comments1) {
         final List<WorkItemComments.WorkItemComment> list = comments1.stream().map(v -> new WorkItemComments.WorkItemComment(v.getId(), v.getText(), v.getCreatedBy().getDisplayName(), v.getCreatedDate())).toList();
         final WorkItemComments workItemComments = new WorkItemComments(list);
         return workItemComments;
-    }
-
-
-    protected String toQuery(String searchText) {
-        final String escapedSearch = searchText.replace("'", "''");
-        final String query = """
-                SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType], \
-                [System.State], [System.AssignedTo], [System.CreatedDate], [System.ChangedDate] \
-                FROM WorkItems WHERE [System.TeamProject] = '%s' AND \
-                ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s' ) \
-                ORDER BY [System.ChangedDate] DESC""".formatted(project, escapedSearch, escapedSearch);
-        return query;
     }
 
     protected List<WorkItemModel> toWorkItemModels(WorkItemList workItemsList) {
@@ -282,12 +256,11 @@ public abstract class AbstractWorkItemClient {
 
     protected int[] toIds(WorkItemQueryResult workItemQueryResult) {
         final List<WorkItemReference> workItemRef = workItemQueryResult.getWorkItems();
-        final int[] ids = workItemRef.stream().mapToInt(WorkItemReference::getId).toArray();
+        final int[] ids = workItemRef.parallelStream().mapToInt(WorkItemReference::getId).toArray();
         return ids;
     }
 
-    public List<WorkItemModel> searchWorkItems(String string, String team) throws WorkItemException {
-        final String query = toQuery(string);
+    public List<WorkItemModel> executeQuery(String team, String query) throws WorkItemException {
         LOG.info("Query: {}", query);
         try {
             final WorkItemQueryResult workItemQueryResult = query(query, team);

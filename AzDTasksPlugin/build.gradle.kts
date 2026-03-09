@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.azdtasks"
-version = "1.5"
+version = "1.6"
 
 repositories {
     mavenCentral()
@@ -22,7 +22,7 @@ dependencies {
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         testImplementation("junit:junit:4.13.2")
-        implementation("org.azdtasks:azdcore:1.0")
+        implementation("org.azdtasks:azdcore:1.1")
         bundledPlugin("com.intellij.tasks")
     }
 }

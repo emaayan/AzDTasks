@@ -69,6 +69,22 @@ public class TestAPIScratch {
     //    personalAccessToken="wrwerwrwrewrwerwerwer";
         AzDServiceClient azDServiceClient = AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization),project, personalAccessToken)).buildClient();
         WorkItemClient workItemClient = new WorkItemClient(organization, project, personalAccessToken);
+        String s= """
+                  SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType], 
+                                [System.State], [System.AssignedTo], [System.CreatedDate], [System.ChangedDate] 
+                                FROM WorkItems WHERE [System.TeamProject] = '%s' AND 
+                                ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s' ) 
+                                ORDER BY [System.ChangedDate] DESC
+                """;
+        s= """
+           SELECT [System.Id]
+           FROM WorkItems
+           WHERE ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
+           ORDER BY [System.ChangedDate] DESC
+           """;
+        String formatted = s.formatted( "Defect", "Test Defect");
+        List<WorkItemModel> workItemModels = workItemClient.executeQuery("", formatted);
+
         Map<String, WorkItemType> workItemTypes = workItemClient.getWorkItemTypes();
         Map<String, WorkItemField> workItemFields = workItemClient.getWorkItemFields(v -> true);
         WorkItemTrackingHelpersRequestBuilder workItemTrackingHelpersRequestBuilder = azDServiceClient.helpers().workItemTracking();

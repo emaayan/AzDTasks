@@ -1,5 +1,6 @@
 package org.azdtasks.core.client;
 
+import org.azd.authentication.PersonalAccessTokenCredential;
 import org.azd.core.types.Projects;
 import org.azd.core.types.WebApiTeams;
 import org.azd.enums.GetFieldsExpand;
@@ -8,9 +9,12 @@ import org.azd.exceptions.AzDException;
 //import org.azd.interfaces.AzDClient;
 //import org.azd.interfaces.WorkItemTrackingDetails;
 //import org.azd.utils.AzDClientApi;
+import org.azd.http.ClientRequest;
 import org.azd.workitemtracking.types.*;
+import org.azdtasks.core.WorkItemComments;
 import org.azdtasks.core.WorkItemException;
 import org.azdtasks.core.WorkItemModel;
+import org.azdtasks.core.types.Comment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +43,23 @@ public class WorkItemLegacyClient extends AbstractWorkItemClient {
     @Override
     protected List<WorkItemField> getWorkItemFieldsImpl(GetFieldsExpand getFieldsExpand) throws AzDException {
         return List.of();
+    }
+
+    @Override
+    protected WorkItemComments getCommentsFor(int id) throws AzDException {
+        final String url = toURL(getOrganization());
+        final PersonalAccessTokenCredential accessTokenCredential = new PersonalAccessTokenCredential(url, getProject(), getPersonalAccessToken());
+        final ClientRequest build = ClientRequest.builder(accessTokenCredential)
+                .baseInstance(accessTokenCredential.getOrganizationUrl())
+                .location("608aac0a-32e1-4493-a863-b9cf4566d257")
+                .area("wit")
+                .apiVersion("7.2-preview.4")
+                .serviceEndpoint("workItemId", id)
+                .build();
+        final org.azdtasks.core.types.CommentList comments = build.execute(org.azdtasks.core.types.CommentList.class);
+        final List<Comment> comments1 = comments.getComments();
+        final WorkItemComments workItemComments = getWorkItemComments(comments1);
+        return workItemComments;
     }
 
     @Override
