@@ -25,6 +25,16 @@
     <extensions defaultExtensionNs="com.intellij">
         <tasks.repositoryType implementation="org.azdtasks.plugin.AzDoRepositoryType"/>
     </extensions>
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+                id="Azure Tasks"
+                secondary="true"
+                anchor="right"
+                factoryClass="org.azdtasks.plugin.tasklist.AzureTasksToolWindowFactory"
+
+        />
+        <!--                icon="/icons/azdo.svg"-->
+    </extensions>
     <!-- Extensions defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
     <extensions defaultExtensionNs="com.intellij">
