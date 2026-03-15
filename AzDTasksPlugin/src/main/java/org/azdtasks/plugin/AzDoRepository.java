@@ -1,11 +1,9 @@
 package org.azdtasks.plugin;
 
 
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.NlsContexts;
-import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.tasks.*;
 import com.intellij.tasks.impl.BaseRepository;
@@ -38,7 +36,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
 
     //Categories are sorted by their logical order
-    private enum Category {
+    public enum Category {
 
         Proposed(), InProgress(), Resolved(), Completed(true), Removed(true);
         private final boolean isClosed;
@@ -61,14 +59,14 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     }
 
-    private final static Set<String> defClosedStates = Set.of("Closed", "Done", "Removed", "Resolved");
+    private final Set<String> defClosedStates = Set.of("Closed", "Done", "Removed", "Resolved");
     private Map<String, WorkItemType> workItemTypes = new HashMap<>();
     private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
     private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
 
     private transient AbstractWorkItemClient client = null;
 
-    private final EnumMap<TaskType, Icon> icons = new EnumMap<>(Map.of(
+    public final EnumMap<TaskType, Icon> icons = new EnumMap<>(Map.of(
             TaskType.BUG, IconManager.getInstance().getIcon("META-INF/bug.svg", this.getClass().getClassLoader())
             , TaskType.EXCEPTION, IconManager.getInstance().getIcon("META-INF/exception.svg", this.getClass().getClassLoader())
             , TaskType.FEATURE, IconManager.getInstance().getIcon("META-INF/feature.svg", this.getClass().getClassLoader())
@@ -106,6 +104,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return new AzDoRepository(this);
     }
 
+    public boolean containsState(String state) {
+        return defClosedStates.contains(state);
+    }
 
     /**
      * Ensure a client is initialized
@@ -243,6 +244,30 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         }
     }
 
+
+    public boolean isTaskClosed(String state, final WorkItemType workItemType) {
+        if (state != null) {
+            if (workItemType != null) {
+                final Map<String, String> states = workItemType.states();
+                if (states != null) {
+                    final String cat = states.getOrDefault(state, "");
+                    if (!cat.isEmpty()) {
+                        final AzDoRepository.Category category = AzDoRepository.Category.valueOf(cat);
+                        return category.isClosed();
+                    } else {
+                        return containsState(state);
+                    }
+                } else {
+                    return containsState(state);
+                }
+            } else {
+                return containsState(state);
+            }
+        } else {
+            return false;
+        }
+    }
+
     public @NotNull Map<String, String> getWorkItemTypes(String project) throws WorkItemException {
         if (canBeAccessed() && StringUtil.isNotEmpty(project)) {
             final AbstractWorkItemClient client = createClient(project);
@@ -270,25 +295,44 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                     final WorkItemModel workItem = fetchClient().getWorkItem(id);
                     workItems = workItem != null ? List.of(workItem) : List.of();
                 } else {
-                    final String s = """
-                            SELECT [System.Id]
-                            FROM WorkItems
-                            WHERE [System.TeamProject] = '%s' AND ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
-                            ORDER BY [System.ChangedDate] DESC
-                            """;
-                    final String escapedSearch = query.replace("'", "''");
-
-                    final String formatted = s.formatted(getProject(),escapedSearch, escapedSearch);
-                    workItems = fetchClient().executeQuery(getTeam(), formatted);
+                    final String formatted = getQuery(query);
+                    workItems = getExecuteQuery(formatted);
                 }
             }
-            return workItems.parallelStream()
-                    .map(this::convertToTask)
-                    .toArray(Task[]::new);
+            return convert(workItems);
         } catch (AzDException e) {
             LOG.error("Failed to fetch work items", e);
             throw new Exception("Failed to fetch work items: " + e.getMessage(), e);
         }
+    }
+
+    private AzTask @NotNull [] convert(List<WorkItemModel> workItems) {
+        return workItems.parallelStream()
+                .map(this::convertToTask)
+                .toArray(AzTask[]::new);
+    }
+
+    private List<WorkItemModel> getExecuteQuery(String formatted) throws WorkItemException {
+        return fetchClient().executeQuery(getTeam(), formatted);
+    }
+
+    public AzTask @NotNull [] getCurrentTasks() throws WorkItemException {
+        final String s = "SELECT [System.Id]  FROM WorkItems WHERE System.IterationPath=@CurrentIteration AND [System.AssignedTo] = @Me order by Microsoft.VSTS.Common.Priority, System.State";
+        final List<WorkItemModel> executeQuery = getExecuteQuery(s);
+        return convert(executeQuery);
+    }
+
+    private @NotNull String getQuery(@NotNull String query) {
+        final String s = """
+                SELECT [System.Id]
+                FROM WorkItems
+                WHERE [System.TeamProject] = '%s' AND ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
+                ORDER BY [System.ChangedDate] DESC
+                """;
+        final String escapedSearch = query.replace("'", "''");
+
+        final String formatted = s.formatted(getProject(), escapedSearch, escapedSearch);
+        return formatted;
     }
 
 
@@ -312,7 +356,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private final static String delim = "-";
 
-    private String buildId(String id) {
+    public String buildId(String id) {
         final String formatted = "%s %s%s%s".formatted(getRepositoryType().getName(), getProject(), delim, id);
         return formatted;
 
@@ -337,154 +381,14 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     /**
      * Convert WorkItemModel to IntelliJ Task
      */
-    private Task convertToTask(WorkItemModel workItemModel) {
-        return new Task() {
-            @NotNull
-            @Override
-            public String getId() {
-                final String s = buildId(getNumber());
-                return s;
-            }
-
-            @Override
-            public @NotNull String getNumber() {//used for updating time and tasks stats
-                return String.valueOf(workItemModel.id());
-            }
-
-            @Override
-            public @NlsSafe @NotNull String getPresentableId() {//used for change list names, and commit message
-                return "%s %s".formatted(workItemModel.workItemType(), getNumber());
-            }
-
-            @NotNull
-            @Override
-            public String getPresentableName() {//use for the search box
-                return "%s %s: %s".formatted(getProject(), getPresentableId(), getSummary());
-            }
-
-
-            @NotNull
-            @Override
-            public String getSummary() {
-                return workItemModel.title();
-            }
-
-            @Nullable
-            @Override
-            public String getDescription() {
-                return workItemModel.description();
-            }
-
-
-            @Override
-            public Comment @NotNull [] getComments() {
-                final WorkItemComments workItemComments = workItemModel.workItemComments();
-                final Comment[] comments;
-                if (workItemComments != null && workItemComments.comments() != null) {
-                    final List<WorkItemComments.WorkItemComment> comments1 = workItemComments.comments();
-                    comments = new Comment[comments1.size()];
-                    for (int i = 0; i < comments1.size(); i++) {
-                        final WorkItemComments.WorkItemComment workItemComment = comments1.get(i);
-                        comments[i] = new Comment() {
-                            @Override
-                            public @NlsSafe String getText() {
-                                return workItemComment.text();
-                            }
-
-                            @Override
-                            public @Nullable @NlsSafe String getAuthor() {
-                                return workItemComment.author();
-                            }
-
-                            @Override
-                            public @Nullable Date getDate() {
-                                return workItemComment.createdDate();
-                            }
-                        };
-                    }
-                } else {
-                    comments = Comment.EMPTY_ARRAY;
-                }
-                return comments;
-            }
-
-
-            @Override
-            public @NotNull Icon getIcon() {
-                final TaskType type = getType();
-                final Icon icon = AzDoRepository.this.icons.getOrDefault(type, AllIcons.FileTypes.Any_type);
-                return icon;
-            }
-
-
-            @Override
-            public @NotNull TaskType getType() {
-                final String s = workItemModel.workItemType();
-                final TaskType taskType = workItemTypeToTaskTypeMap.getOrDefault(s, TaskType.OTHER);
-                return taskType;
-            }
-
-            @Nullable
-            @Override
-            public String getIssueUrl() {
-                return workItemModel.url();
-            }
-
-            @Nullable
-            @Override
-            public String getProject() {
-                return project;
-            }
-
-            @Nullable
-            @Override
-            public TaskRepository getRepository() {
-                return AzDoRepository.this;
-            }
-
-            @Override
-            public boolean isClosed() {
-                final String state = workItemModel.state();
-                if (state != null) {
-                    final WorkItemType workItemType = workItemTypes.get(workItemModel.workItemType());
-                    if (workItemType != null) {
-                        final Map<String, String> states = workItemType.states();
-                        if (states != null) {
-                            final String cat = states.getOrDefault(state, "");
-                            if (!cat.isEmpty()) {
-                                final Category category = Category.valueOf(cat);
-                                return category.isClosed();
-                            } else {
-                                return defClosedStates.contains(state);
-                            }
-                        } else {
-                            return defClosedStates.contains(state);
-                        }
-                    } else {
-                        return defClosedStates.contains(state);
-                    }
-                } else {
-                    return false;
-                }
-            }
-
-            @Override
-            public boolean isIssue() {
-                return true;
-            }
-
-            @Nullable
-            @Override
-            public java.util.Date getUpdated() {
-                return workItemModel.changedDate();
-            }
-
-            @Nullable
-            @Override
-            public java.util.Date getCreated() {
-                return workItemModel.createdDate();
-            }
-        };
+    private AzTask convertToTask(WorkItemModel workItemModel) {
+        final String key = workItemModel.workItemType();
+        final WorkItemType workItemType = workItemTypes.get(key);
+        final TaskType taskType = workItemTypeToTaskTypeMap.getOrDefault(key, TaskType.OTHER);
+        return new AzTask(this
+                , taskType
+                , isTaskClosed(workItemModel.state(), workItemType)
+                , workItemModel);
     }
 
 
@@ -699,4 +603,5 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 , getFeatureWorkItemType()
                 , getTimeTrackFieldName());
     }
+
 }

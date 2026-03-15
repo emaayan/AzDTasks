@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.azdtasks"
-version = "1.6"
+version = "2.0"
 
 repositories {
     mavenCentral()

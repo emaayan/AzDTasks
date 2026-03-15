@@ -82,6 +82,15 @@ public class TestAPIScratch {
            WHERE ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
            ORDER BY [System.ChangedDate] DESC
            """;
+//        s= """
+//                SELECT [System.Id]
+//                FROM WorkItems
+//                WHERE
+//                    [System.AssignedTo] = @Me
+//                    AND [System.StateCategory] IN ('Proposed', 'InProgress')
+//                ORDER BY [System.CreatedDate] DESC
+//                """;
+        List<WorkItemModel> workItemModels1 = workItemClient.executeQuery("", s);
         String formatted = s.formatted( "Defect", "Test Defect");
         List<WorkItemModel> workItemModels = workItemClient.executeQuery("", formatted);
 
