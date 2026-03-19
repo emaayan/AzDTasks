@@ -1,6 +1,5 @@
 package org.azdtasks.core.client;
 
-import org.azd.authentication.PersonalAccessTokenCredential;
 import org.azd.common.types.Author;
 import org.azd.core.types.*;
 import org.azd.enums.FieldType;
@@ -8,19 +7,18 @@ import org.azd.enums.FieldUsage;
 import org.azd.enums.GetFieldsExpand;
 import org.azd.enums.Instance;
 import org.azd.exceptions.AzDException;
-import org.azd.http.ClientRequest;
 import org.azd.workitemtracking.types.*;
-import org.azdtasks.core.WorkItemComments;
-import org.azdtasks.core.WorkItemException;
-import org.azdtasks.core.WorkItemField;
-import org.azdtasks.core.WorkItemModel;
-import org.azdtasks.core.WorkItemType;
-import org.azdtasks.core.types.Comment;
-import org.azdtasks.core.types.CommentList;
+import org.azd.workitemtracking.types.categories.WorkItemTypeCategories;
+import org.azd.workitemtracking.types.categories.WorkItemTypeReference;
+import org.azdtasks.core.*;
 
+import org.azdtasks.core.WorkItemField;
+import org.azdtasks.core.WorkItemType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URI;
+import java.nio.file.Path;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -111,6 +109,65 @@ public abstract class AbstractWorkItemClient {
 
     protected abstract List<org.azd.workitemtracking.types.WorkItemField> getWorkItemFieldsImpl(GetFieldsExpand getFieldsExpand) throws AzDException;
 
+
+    public Map<String, WorkItemTypeLinkToCategory> getTypesToCategories() throws WorkItemException {
+        final Map<String, WorkItemTypeLinkToCategory> m=new HashMap<>();
+        final Map<String, WorkItemType> workItemTypes = getWorkItemTypes();
+        final Map<String, WorkItemType> refWorkItemTypes =workItemTypes.values()
+                .stream()
+                .collect(Collectors.toMap(WorkItemType::refName, workItemType -> workItemType));
+        final Map<String, WorkItemTypeCategory> workItemTypeCategories = getWorkItemTypeCategories();
+        final Collection<WorkItemTypeCategory> values = workItemTypeCategories.values();
+        for (WorkItemTypeCategory category : values) {
+            final Set<String> refNames = category.workTypes();
+            for (String ref : refNames) {
+                final WorkItemType workItemType = refWorkItemTypes.get(ref);
+                if (workItemType!=null) {
+                    final WorkItemTypeLinkToCategory workItemTypeLinkToCategory = new WorkItemTypeLinkToCategory(workItemType, category);
+                    m.put(workItemType.name(), workItemTypeLinkToCategory);
+                }
+            }
+        }
+        return m;
+    }
+    public Map<String, WorkItemTypeCategory> getWorkItemTypeCategories() throws WorkItemException {
+        final Map<String, WorkItemTypeCategory> m = new HashMap<>();
+        try {
+            final WorkItemTypeCategories workItemTypeCategoriesImpl = getWorkItemTypeCategoriesImpl();
+            final List<org.azd.workitemtracking.types.categories.WorkItemTypeCategory> workItemTypeCategories = workItemTypeCategoriesImpl.getWorkItemTypeCategories();
+            for (org.azd.workitemtracking.types.categories.WorkItemTypeCategory workItemTypeCategory : workItemTypeCategories) {
+                final String name = workItemTypeCategory.getName();
+                final String referenceName = workItemTypeCategory.getReferenceName();
+                final WorkItemTypeReference defaultWorkItemType = workItemTypeCategory.getDefaultWorkItemType();
+                final String typeName1 = getRefName(defaultWorkItemType);
+
+                final List<WorkItemTypeReference> workItemTypesRef = workItemTypeCategory.getWorkItemTypes();
+                final Set<String> names = new HashSet<>();
+                for (WorkItemTypeReference workItemTypeReference : workItemTypesRef) {
+                    final String typeName = getRefName(workItemTypeReference);
+                    names.add(typeName);
+                }
+                final WorkItemTypeCategory wiTCategory = new WorkItemTypeCategory(name, referenceName, typeName1, names);
+                m.put(wiTCategory.refName(), wiTCategory);
+            }
+        } catch (AzDException e) {
+            throw new WorkItemException(e);
+        }
+        return m;
+    }
+
+    private String getRefName(WorkItemTypeReference workItemTypeReference) {
+        final String url = workItemTypeReference.getUrl();
+        final URI uri = URI.create(url);
+        final String path = uri.getPath();
+        final Path path1 = Path.of(path);
+        final int nameCount = path1.getNameCount();
+        final Path name = path1.getName(nameCount - 1);
+        return name.toString();
+    }
+
+    protected abstract WorkItemTypeCategories getWorkItemTypeCategoriesImpl() throws AzDException;
+
     public Map<String, WorkItemType> getWorkItemTypes() throws WorkItemException {
         try {
             final org.azd.workitemtracking.types.WorkItemTypes workItemTypesImpl = getWorkItemTypesImpl();
@@ -119,8 +176,9 @@ public abstract class AbstractWorkItemClient {
                 final List<WorkItemStateColor> states = wt.getStates();
                 final Map<String, String> m = states.stream()
                         .collect(Collectors.toMap(WorkItemStateColor::getName, WorkItemStateColor::getCategory));
-                final WorkItemType workItemTy = new WorkItemType(wt.getName(), m);
-                workItemTypes.put(workItemTy.name(), workItemTy);
+                final String url = wt.getIcon().getUrl();
+                final WorkItemType workItemTy = new WorkItemType(wt.getName(), wt.getReferenceName(),url, m);
+                workItemTypes.put( workItemTy.name(), workItemTy);
             }
             return workItemTypes;
         } catch (AzDException e) {
@@ -138,6 +196,10 @@ public abstract class AbstractWorkItemClient {
                 return null;
             }
         } catch (AzDException e) {
+            if (e.getMessage().contains("WorkItemUnauthorizedAccessException")){//ugly hack
+                LOG.warn("Failed to get work item "+id,e);
+                return null;
+            }
             throw new WorkItemException(e);
         }
     }
@@ -241,12 +303,6 @@ public abstract class AbstractWorkItemClient {
     }
 
     protected abstract WorkItemComments getCommentsFor(int id) throws AzDException;
-
-    protected WorkItemComments getWorkItemComments(List<Comment> comments1) {
-        final List<WorkItemComments.WorkItemComment> list = comments1.stream().map(v -> new WorkItemComments.WorkItemComment(v.getId(), v.getText(), v.getCreatedBy().getDisplayName(), v.getCreatedDate())).toList();
-        final WorkItemComments workItemComments = new WorkItemComments(list);
-        return workItemComments;
-    }
 
     protected List<WorkItemModel> toWorkItemModels(WorkItemList workItemsList) {
         final List<WorkItem> workItems = workItemsList.getWorkItems();

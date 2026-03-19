@@ -4,30 +4,33 @@ package org.tasklist.plugin;
 import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.PsiManager;
+import com.intellij.tasks.LocalTask;
 import com.intellij.tasks.Task;
-import com.intellij.tasks.doc.TaskPsiElement;
+import com.intellij.tasks.TaskManager;
+import com.intellij.tasks.actions.OpenTaskDialog;
 import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
-import com.intellij.ui.components.fields.IntegerField;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.concurrency.AppExecutorUtil;
-import com.intellij.util.messages.Topic;
 import com.intellij.util.ui.UIUtil;
+
 import org.jetbrains.annotations.NotNull;
-import s.D.F;
+import org.tasklist.plugin.table.BoundTableModel;
+import org.tasklist.plugin.table.ColumnRenderer;
+import org.tasklist.plugin.table.IconColumnRender;
+import org.tasklist.plugin.table.IconData;
+
 
 import javax.swing.*;
-import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 
 import java.awt.*;
@@ -36,59 +39,59 @@ import java.util.*;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<AbstractTasksPanel<? extends Task>> {
 
-    private static final String REFRESH_INTERVAL_KEY = "AzureTasks.refreshInterval";
-    private static final int DEFAULT_REFRESH_INTERVAL = 30;
+    private final static Logger LOG = Logger.getInstance(AbstractTasksPanel.class);
 
     private final Project project;
+
     private final BoundTableModel<T> taskTableModel = new BoundTableModel<>();
     private final TaskDetailPanel<T> detailPanel = new TaskDetailPanel<>();
     private String lastQuery = "";
+
+    private static final String REFRESH_INTERVAL_KEY = "AzureTasks.refreshInterval";
+    private static final int DEFAULT_REFRESH_INTERVAL = 30;
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> scheduledFuture = null;
 
-
+    private final JBTable table;
     public AbstractTasksPanel(@NotNull Project project) {
         super(new BorderLayout());
         this.project = project;
 
-        //support Ctrl+Q directly on the table
-//        final String showQuickDoc = "showQuickDoc";
-//        table.getActionMap().put(showQuickDoc, new AbstractAction() {
-//            @Override
-//            public void actionPerformed(ActionEvent e) {
-//                getTask(table).ifPresent(task -> showDocumentation(task));
-//            }
-//        });
-//        table.getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_Q, InputEvent.CTRL_DOWN_MASK), showQuickDoc);
-
 
         // Top: search bar + table
-        final JBPanel<JBPanel> topPanel = new JBPanel<>(new BorderLayout());
-        final JBPanel jbPanel = buildSearchBar();
+        final JBPanel<?> topPanel = new JBPanel<>(new BorderLayout());
+        final JBPanel<?> jbPanel = buildBar();
         topPanel.add(jbPanel, BorderLayout.NORTH);
-
 
         taskTableModel
                 .add(
-                        taskTableModel.new Column<String>("Id", String.class, Task::getPresentableId, 20)
-                        , taskTableModel.new Column<String>("Summary", String.class, Task::getSummary, 300)
-                        , taskTableModel.new Column<Date>("Updated", Date.class, Task::getUpdated, 120)
-                        , taskTableModel.new Column<Boolean>("Closed", Boolean.class, Task::isClosed, 10)
+                        new IconColumnRender<>("Type", t -> new IconData(t.getIcon()))
+                        , new ColumnRenderer<>("Id", String.class, Task::getNumber, 20)
+                        , new ColumnRenderer<>("Summary", String.class, Task::getSummary, 300)
+                        , new ColumnRenderer<>("Updated", Date.class, Task::getUpdated, 120)
+                        , new ColumnRenderer<>("Closed", Boolean.class, Task::isClosed, 10)
                 );
+
         addCustomFields(taskTableModel);
-        final JBTable table = taskTableModel.createTable();
+        table = taskTableModel.createTable();
         table.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
-                    getTask(table).map(Task::getIssueUrl).ifPresent(url -> {
-                        if (StringUtil.isNotEmpty(url)) {
-                            BrowserUtil.browse(url);
-                        }
-                    });
+
+                    Optional<T> task = getTask(table);
+
+                    task.ifPresent(t -> openTask(t));
+
+//                    task.map(Task::getIssueUrl).ifPresent(url -> {
+//                        if (StringUtil.isNotEmpty(url)) {
+//                            BrowserUtil.browse(url);
+//                        }
+//                    });
                 }
             }
         });
@@ -116,6 +119,21 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
 
     }
 
+    private void openTask(T task) {
+        // Find or create the LocalTask from the tracker task
+        final OpenTaskDialog openTaskDialog = new OpenTaskDialog(project, task);
+        openTaskDialog.show();
+//        LocalTask localTask = taskManager.findTask(task.getId());
+//
+//        if (localTask == null) {
+//            // Activate it — this creates the LocalTask and shows the Open Task dialog
+//            taskManager.activateTask(task, true);
+//        } else {
+//            // Already exists locally — show the dialog directly
+//            final OpenTaskDialog openTaskDialog = new OpenTaskDialog(project, localTask);
+//            openTaskDialog.show();
+//        }
+    }
     private int loadPersistedInterval() {
         return PropertiesComponent.getInstance(project).getInt(REFRESH_INTERVAL_KEY, DEFAULT_REFRESH_INTERVAL);
     }
@@ -128,7 +146,7 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         return taskTableModel.getSelected(table);
     }
 
-    private JBPanel buildSearchBar() {
+    private JBPanel<?> buildBar() {
         final JBPanel<JBPanel> bar = new JBPanel<>(new BorderLayout(4, 0));
 
         // Search field (center, takes all available width)
@@ -142,10 +160,10 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         });
 
         // Interval spinner (right side)
-        final SpinnerNumberModel spinnerModel = new SpinnerNumberModel(loadPersistedInterval(), 5, 3600, 5);
-        final JSpinner intervalSpinner = new JSpinner(spinnerModel);
-        intervalSpinner.setToolTipText("Auto-refresh interval (seconds)");
+        final SpinnerNumberModel spinnerModel = new SpinnerNumberModel(loadPersistedInterval(), 0, 3600, 5);
 
+        final JSpinner intervalSpinner = new JSpinner(spinnerModel);
+        intervalSpinner.setToolTipText("Auto-refresh interval (seconds) , set 0 to stop");
         // Constrain the spinner width — otherwise it stretches
         intervalSpinner.setPreferredSize(new Dimension(70, intervalSpinner.getPreferredSize().height));
 
@@ -169,16 +187,7 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         return bar;
     }
 
-    protected void addCustomFields(BoundTableModel<T> taskTableModel) {
-
-    }
-
-//    private void showDocumentation(T task) {
-//        final PsiManager instance = PsiManager.getInstance(project);
-//        final TaskPsiElement element = new TaskPsiElement(instance, task);
-//        // Reuses IntelliJ's exact documentation UI
-//        com.intellij.codeInsight.documentation.DocumentationManager.getInstance(project).showJavaDocInfo(element, null);
-//    }
+    protected abstract void addCustomFields(BoundTableModel<T> taskTableModel);
 
     private void restartAutoRefresh(int newIntervalSec) {
         stopAutoRefresh();
@@ -186,7 +195,12 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         if (scheduledFuture != null) {
             scheduledFuture.cancel(false);
         }
-        scheduledFuture = scheduler.scheduleWithFixedDelay(() -> loadTasks(lastQuery), newIntervalSec, newIntervalSec, TimeUnit.SECONDS);
+        if (newIntervalSec > 0) {
+            LOG.info("Starting query");
+            scheduledFuture = scheduler.scheduleWithFixedDelay(() -> loadTasks(lastQuery), newIntervalSec, newIntervalSec, TimeUnit.SECONDS);
+        } else {
+            LOG.info("Stopped query");
+        }
     }
 
     private void stopAutoRefresh() {
@@ -197,22 +211,11 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
 
     private void startAutoRefresh() {
         restartAutoRefresh(loadPersistedInterval());
-
     }
 
     public void dispose() {
         stopAutoRefresh();
-        //if (countdownTimer != null) countdownTimer.stop();
     }
-
-
-//    private void resetCountdown() {
-//        secondsUntilRefresh = REFRESH_INTERVAL_SEC;
-//        ApplicationManager.getApplication().invokeLater(() -> {
-//            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-//            statusLabel.setText("Last refreshed: " + LocalTime.now().format(fmt) + "  ");
-//        });
-//    }
 
     private void loadTasks(String query) {
         // Run off EDT to avoid blocking UI
@@ -222,16 +225,19 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
                                               public void run(@NotNull ProgressIndicator indicator) {
                                                   try {
                                                       final T[] tasks = getTasks(indicator, query);
-                                                      ApplicationManager.getApplication().invokeLater(() -> taskTableModel.set(Arrays.asList(tasks)));
+                                                      ApplicationManager.getApplication().invokeLater(() -> taskTableModel.set(Arrays.asList(tasks),table));
                                                   } catch (Exception e) {
-                                                      ApplicationManager.getApplication().invokeLater(() ->
-                                                              Messages.showErrorDialog(project, e.getMessage(), "Tasks Error")
+                                                      LOG.error("Failed to invoke query ", e);
+                                                      ApplicationManager.getApplication().invokeLater(() -> onQueryError(e)
+                                                              //Messages.showErrorDialog(project, e.getMessage(), "Tasks Error")
                                                       );
                                                   }
                                               }
                                           }
         );
     }
+
+    protected abstract void onQueryError(Exception e);
 
     protected abstract T[] getTasks(ProgressIndicator indicator, String query) throws Exception;
 

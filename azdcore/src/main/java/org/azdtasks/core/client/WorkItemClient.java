@@ -3,19 +3,27 @@ package org.azdtasks.core.client;
 
 import org.azd.abstractions.ApiResponse;
 import org.azd.abstractions.serializer.SerializableEntity;
+import org.azd.authentication.AccessTokenCredential;
 import org.azd.authentication.PersonalAccessTokenCredential;
+import org.azd.common.ApiVersion;
+import org.azd.common.Constants;
+import org.azd.common.ResourceId;
 import org.azd.common.types.JsonPatchDocument;
 import org.azd.core.types.*;
 import org.azd.enums.*;
 import org.azd.exceptions.AzDException;
+import org.azd.http.ClientRequest;
+import org.azd.locations.LocationsBaseRequestBuilder;
 import org.azd.serviceclient.AzDService;
 import org.azd.serviceclient.AzDServiceClient;
+import org.azd.utils.UrlBuilder;
 import org.azd.workitemtracking.WorkItemTrackingRequestBuilder;
 import org.azd.workitemtracking.comments.CommentsRequestBuilder;
 import org.azd.workitemtracking.fields.FieldsRequestBuilder;
 import org.azd.workitemtracking.types.*;
 import org.azd.workitemtracking.types.WorkItemField;
 import org.azd.workitemtracking.types.WorkItemTypes;
+import org.azd.workitemtracking.types.categories.WorkItemTypeCategories;
 import org.azd.workitemtracking.workitems.WorkItemsRequestBuilder;
 import org.azdtasks.core.*;
 
@@ -58,7 +66,8 @@ public class WorkItemClient extends AbstractWorkItemClient {
     @Override
     protected WorkItem getWorkItemImpl(int id) throws AzDException {
         final WorkItemsRequestBuilder workItemsRequestBuilder = wit.workItems();
-        return check(workItemsRequestBuilder.get(id, r -> r.queryParameters.expand = WorkItemExpand.ALL));
+        final WorkItem t = workItemsRequestBuilder.get(id, r -> r.queryParameters.expand = WorkItemExpand.ALL);
+        return check(t);
     }
 
     @Override
@@ -90,6 +99,29 @@ public class WorkItemClient extends AbstractWorkItemClient {
         patchDocuments.add(d);
         final WorkItem update = wit.workItems().update(id, patchDocuments);
         return update;
+    }
+
+    protected WorkItemTypeCategories getWorkItemTypeCategoriesImpl() throws AzDException {
+        final LocationsBaseRequestBuilder locations = azDServiceClient.locations();
+        final String locationUrl = locations.getUrl(ResourceId.WIT);
+        final String descriptors = locations.getConnectionData().getAuthenticatedUser().getDescriptor();
+        final AccessTokenCredential accessTokenCredential = azDServiceClient.accessTokenCredential();
+        final String projectName = accessTokenCredential.getProjectName();
+        // Construct the request URI
+        final URI requestUri = UrlBuilder.fromBaseUrl(locationUrl)
+                .appendPath(projectName)
+                .appendPath(Constants.APIS_RELATIVE_PATH)
+                .appendPath("wit")
+                .appendPath("workitemtypecategories")
+                .appendQueryString(Constants.API_VERSION, ApiVersion.WORK_ITEM_TYPES)
+                .appendQueryString("descriptors", descriptors)
+                .build();
+
+
+        final ClientRequest workItemTypeCategoriesRequest = ClientRequest.builder(accessTokenCredential).URI(requestUri).build();
+
+        final WorkItemTypeCategories execute = workItemTypeCategoriesRequest.execute(WorkItemTypeCategories.class);
+        return execute;
     }
 
     @Override

@@ -3,12 +3,14 @@ package org.azdtasks.plugin;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.tasks.*;
 import com.intellij.tasks.impl.BaseRepository;
 import com.intellij.tasks.impl.httpclient.NewBaseRepositoryImpl;
 import com.intellij.ui.IconManager;
+import com.intellij.util.IconUtil;
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xmlb.annotations.Tag;
 import org.apache.commons.lang3.math.NumberUtils;
@@ -22,6 +24,8 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
 
 import javax.swing.*;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
@@ -34,6 +38,8 @@ import java.util.stream.Collectors;
 public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
+
+
 
     //Categories are sorted by their logical order
     public enum Category {
@@ -61,29 +67,31 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private final Set<String> defClosedStates = Set.of("Closed", "Done", "Removed", "Resolved");
     private Map<String, WorkItemType> workItemTypes = new HashMap<>();
-    private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
-    private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
+//    private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
+//    private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
+    //Microsoft.RequirementCategory
+    //Microsoft.TaskCategory
+    private final Map<String,TaskType> categoryToTaskType=Map.of(
+            "Microsoft.BugCategory",TaskType.BUG
+        ,"Microsoft.FeatureCategory",TaskType.FEATURE
+        ,"",TaskType.OTHER
+);
+    private Map<String, WorkItemTypeLinkToCategory> typesToCategories=new HashMap<>();
 
     private transient AbstractWorkItemClient client = null;
 
-    public final EnumMap<TaskType, Icon> icons = new EnumMap<>(Map.of(
-            TaskType.BUG, IconManager.getInstance().getIcon("META-INF/bug.svg", this.getClass().getClassLoader())
-            , TaskType.EXCEPTION, IconManager.getInstance().getIcon("META-INF/exception.svg", this.getClass().getClassLoader())
-            , TaskType.FEATURE, IconManager.getInstance().getIcon("META-INF/feature.svg", this.getClass().getClassLoader())
-            , TaskType.OTHER, IconManager.getInstance().getIcon("META-INF/misc.svg", this.getClass().getClassLoader())
-    ));
 
     //required for reflection
     public AzDoRepository() {
         super();
-        setBugWorkItemType("Bug");
-        setFeatureWorkItemType("Feature");
+//        setBugWorkItemType("Bug");
+//        setFeatureWorkItemType("Feature");
     }
 
     public AzDoRepository(TaskRepositoryType type) {
         super(type);
-        setBugWorkItemType("Bug");
-        setFeatureWorkItemType("Feature");
+//        setBugWorkItemType("Bug");
+//        setFeatureWorkItemType("Feature");
     }
 
     private AzDoRepository(AzDoRepository other) {
@@ -94,8 +102,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         setTeam(other.getTeam());
         setTop(other.getTop());
         setTimeTrackFieldName(other.getTimeTrackFieldName());
-        workItemTypeToTaskTypeMap.putAll(other.workItemTypeToTaskTypeMap);
-        taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
+//        workItemTypeToTaskTypeMap.putAll(other.workItemTypeToTaskTypeMap);
+//        taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
     }
 
     @NotNull
@@ -108,6 +116,11 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return defClosedStates.contains(state);
     }
 
+    private final Map<String,Icon> cIcons=new HashMap<>();
+    public Optional<Icon> fetchIcon(String url){
+        Icon icon = cIcons.get(url);
+        return Optional.ofNullable(icon);
+    }
     /**
      * Ensure a client is initialized
      */
@@ -117,6 +130,21 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
             final AbstractWorkItemClient c = createClient();
             try {
                 workItemTypes = c.getWorkItemTypes();
+                final Collection<WorkItemType> values = workItemTypes.values();
+                for (WorkItemType value : values) {
+                    String s = value.iconUrl();
+                    try {
+                        final URL url = new URL(s);
+                        final Icon icon = IconLoader.findIcon(url, true);
+                        if (icon!=null) {
+                            final Icon size = IconUtil.scale(icon, null, 20f / icon.getIconWidth());
+                            cIcons.put(s, size);
+                        }
+                    }catch (MalformedURLException e){
+                        LOG.error("Failed getting workItems", e);
+                    }
+                }
+                typesToCategories = c.getTypesToCategories();
             } catch (WorkItemException e) {
                 LOG.error("Failed getting workItems", e);
             }
@@ -300,7 +328,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 }
             }
             return convert(workItems);
-        } catch (AzDException e) {
+        } catch (WorkItemException e) {
             LOG.error("Failed to fetch work items", e);
             throw new Exception("Failed to fetch work items: " + e.getMessage(), e);
         }
@@ -317,7 +345,12 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     }
 
     public AzTask @NotNull [] getCurrentTasks() throws WorkItemException {
-        final String s = "SELECT [System.Id]  FROM WorkItems WHERE System.IterationPath=@CurrentIteration AND [System.AssignedTo] = @Me order by Microsoft.VSTS.Common.Priority, System.State";
+        final String s = """
+                SELECT [System.Id]
+                FROM WorkItems 
+                WHERE System.IterationPath=@CurrentIteration AND [System.AssignedTo] = @Me 
+                ORDER BY Microsoft.VSTS.Common.Priority, System.State
+                """;
         final List<WorkItemModel> executeQuery = getExecuteQuery(s);
         return convert(executeQuery);
     }
@@ -327,6 +360,11 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 SELECT [System.Id]
                 FROM WorkItems
                 WHERE [System.TeamProject] = '%s' AND ([System.Title] CONTAINS '%s' OR [System.Description] CONTAINS '%s')
+                AND (
+                           [System.WorkItemType] IN GROUP 'Microsoft.BugCategory'
+                        OR [System.WorkItemType] IN GROUP 'Microsoft.TaskCategory'
+                        OR [System.WorkItemType] IN GROUP 'Microsoft.RequirementCategory'
+                    )
                 ORDER BY [System.ChangedDate] DESC
                 """;
         final String escapedSearch = query.replace("'", "''");
@@ -378,17 +416,19 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return Integer.parseInt(number);
     }
 
-    /**
-     * Convert WorkItemModel to IntelliJ Task
-     */
+
     private AzTask convertToTask(WorkItemModel workItemModel) {
         final String key = workItemModel.workItemType();
+
         final WorkItemType workItemType = workItemTypes.get(key);
-        final TaskType taskType = workItemTypeToTaskTypeMap.getOrDefault(key, TaskType.OTHER);
+        final WorkItemTypeLinkToCategory workItemTypeLinkToCategory = typesToCategories.get(key);
+        final String s = workItemTypeLinkToCategory.workItemTypeCategory().refName();
+        final TaskType taskType = categoryToTaskType.getOrDefault(s, TaskType.OTHER);
+        final String s1 = workItemType.iconUrl();
         return new AzTask(this
                 , taskType
                 , isTaskClosed(workItemModel.state(), workItemType)
-                , workItemModel);
+                , workItemModel,s1);
     }
 
 
@@ -503,29 +543,29 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
 
     public AzDoRepository map(TaskType taskType, String workItemType) {
-        workItemTypeToTaskTypeMap.put(workItemType, taskType);
-        taskTypeToWorkItemTypeMap.put(taskType, workItemType);
+//        workItemTypeToTaskTypeMap.put(workItemType, taskType);
+//        taskTypeToWorkItemTypeMap.put(taskType, workItemType);
         return this;
     }
 
 
-    @Attribute("BugWorkItemType")
-    public String getBugWorkItemType() {
-        return taskTypeToWorkItemTypeMap.get(TaskType.BUG);
-    }
+//    @Attribute("BugWorkItemType")
+//    public String getBugWorkItemType() {
+//        return taskTypeToWorkItemTypeMap.get(TaskType.BUG);
+//    }
+//
+//    public void setBugWorkItemType(String bugWorkItemType) {
+//        map(TaskType.BUG, bugWorkItemType);
+//    }
 
-    public void setBugWorkItemType(String bugWorkItemType) {
-        map(TaskType.BUG, bugWorkItemType);
-    }
-
-    @Attribute("FeatureWorkItemType")
-    public String getFeatureWorkItemType() {
-        return taskTypeToWorkItemTypeMap.get(TaskType.FEATURE);
-    }
-
-    public void setFeatureWorkItemType(String featureWorkItemType) {
-        final AzDoRepository map = map(TaskType.FEATURE, featureWorkItemType);
-    }
+//    @Attribute("FeatureWorkItemType")
+//    public String getFeatureWorkItemType() {
+//        return taskTypeToWorkItemTypeMap.get(TaskType.FEATURE);
+//    }
+//
+//    public void setFeatureWorkItemType(String featureWorkItemType) {
+//        final AzDoRepository map = map(TaskType.FEATURE, featureWorkItemType);
+//    }
 
     private String team = "";
 
@@ -585,8 +625,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 && Objects.equals(getTeam(), that.getTeam())
                 && Objects.equals(getPassword(), that.getPassword())
                 && Objects.equals(getTop(), that.getTop())
-                && Objects.equals(getBugWorkItemType(), that.getBugWorkItemType())
-                && Objects.equals(getFeatureWorkItemType(), that.getFeatureWorkItemType())
+//                && Objects.equals(getBugWorkItemType(), that.getBugWorkItemType())
+//                && Objects.equals(getFeatureWorkItemType(), that.getFeatureWorkItemType())
                 && Objects.equals(getTimeTrackFieldName(), that.getTimeTrackFieldName())
                 ;
 
@@ -597,10 +637,9 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return Objects.hash(getOrganization()
                 , getProject()
                 , getTeam()
-                , getPassword()
                 , getTop()
-                , getBugWorkItemType()
-                , getFeatureWorkItemType()
+//                , getBugWorkItemType()
+//                , getFeatureWorkItemType()
                 , getTimeTrackFieldName());
     }
 

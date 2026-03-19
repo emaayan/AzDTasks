@@ -9,6 +9,7 @@ import com.intellij.tasks.config.BaseRepositoryEditor;
 import com.intellij.tasks.impl.TaskUiUtil;
 import com.intellij.ui.SimpleListCellRenderer;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.ui.components.fields.IntegerField;
@@ -19,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.util.*;
 import java.util.List;
@@ -29,12 +31,14 @@ import java.util.function.Supplier;
  * Configuration UI for Azure DevOps repository
  */
 public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
+
     private static final Logger LOG = Logger.getInstance(AzDoRepositoryEditor.class);
+
     private JBTextField organizationUrlField;
     private ComboBoxUpdater projects;
     private ComboBoxUpdater teams;
-    private ComboBoxUpdater workTypesForBug;
-    private ComboBoxUpdater workTypesForFeature;
+    //    private ComboBoxUpdater workTypesForBug;
+//    private ComboBoxUpdater workTypesForFeature;
     private ComboBoxUpdater timeTrackingFieldName;
     private IntegerField topField;
 
@@ -60,8 +64,8 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         myRepository.setOrganization(organizationUrlField.getText().trim());
         projects.update();
         teams.update();
-        workTypesForBug.update();
-        workTypesForFeature.update();
+//        workTypesForBug.update();
+//        workTypesForFeature.update();
         timeTrackingFieldName.update();
         ;
 
@@ -153,6 +157,11 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         topField.setCanBeEmpty(false);
         topField.setDefaultValue(myRepository.getTop());
         topField.setValue(myRepository.getTop());
+        topField.setPreferredSize(new Dimension(50, topField.getPreferredSize().height));
+        topField.setMaximumSize(topField.getPreferredSize());
+        topField.setToolTipText("Maximum amount of items a open tasks query will return");
+        final JBPanel topFieldPanel = new JBPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));//prevent field to strech
+        topFieldPanel.add(topField);
         installListener(topField);
 
         projects = new ComboBoxUpdater("Projects", myRepository::getProject, myRepository::setProject, () -> myRepository.getProjects().get());
@@ -168,13 +177,13 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
             }
         };
 
-        workTypesForBug = new ComboBoxUpdater("Work Items for Bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
-        workTypesForFeature = new ComboBoxUpdater("Work Items for Feature", myRepository::getFeatureWorkItemType, myRepository::setFeatureWorkItemType, mapCallable);
+//        workTypesForBug = new ComboBoxUpdater("Work Items for Bug", myRepository::getBugWorkItemType, myRepository::setBugWorkItemType, mapCallable);
+//        workTypesForFeature = new ComboBoxUpdater("Work Items for Feature", myRepository::getFeatureWorkItemType, myRepository::setFeatureWorkItemType, mapCallable);
         projects.getCombo().addItemListener(e -> {
             if (e.getStateChange() == ItemEvent.SELECTED) {
                 try {
-                    workTypesForBug.queue();
-                    workTypesForFeature.queue();
+//                    workTypesForBug.queue();
+//                    workTypesForFeature.queue();
                 } catch (Throwable t) {
                     LOG.error("Error", t);
                 }
@@ -198,17 +207,18 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         helpLabel.setForeground(UIUtil.getContextHelpForeground());
         helpLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
 
+
         final JPanel panel = FormBuilder.createFormBuilder()
                 .addLabeledComponent("Organization:", organizationUrlField)
                 .addComponent(myTestButton)
                 .addComponent(helpLabel)
                 .addLabeledComponent("Project:", projects.getCombo())
                 .addLabeledComponent("Team:", teams.getCombo())
-                .addLabeledComponent("Max items:", topField)
-                .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
-                .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
+                .addLabeledComponent("Max items for query:", topFieldPanel)
+//                .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
+//                .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
                 .addLabeledComponent("Field for time tracking:", timeTrackingFieldName.getCombo())
-                .addComponentFillVertically(new JPanel(), 0)
+//                .addComponentFillVertically(new JBPanel(new FlowLayout(FlowLayout.LEFT, 0, 0)), 0)
                 .getPanel();
 
         return new JBScrollPane(panel, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);

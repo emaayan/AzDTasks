@@ -7,7 +7,7 @@
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-name -->
     <name>AzDTasks</name>
 
-    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+
     <vendor>Elhanan Maayan</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
@@ -31,9 +31,12 @@
                 secondary="true"
                 anchor="right"
                 factoryClass="org.azdtasks.plugin.tasklist.AzureTasksToolWindowFactory"
-
+                icon="/META-INF/azdo.svg"
         />
-        <!--                icon="/icons/azdo.svg"-->
+
+    </extensions>
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="Azure Tasks"  displayType="BALLOON"/>
     </extensions>
     <!-- Extensions defined by the plugin.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->

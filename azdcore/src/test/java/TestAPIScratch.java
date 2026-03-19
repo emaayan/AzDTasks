@@ -1,31 +1,38 @@
 import org.azd.authentication.AccessTokenCredential;
 import org.azd.authentication.PersonalAccessTokenCredential;
-import org.azd.common.types.JsonPatchDocument;
+import org.azd.common.ApiVersion;
+import org.azd.common.Constants;
+import org.azd.common.ResourceId;
 import org.azd.core.CoreRequestBuilder;
-import org.azd.core.types.Processes;
-import org.azd.core.types.Projects;
-import org.azd.core.types.WebApiTeams;
 import org.azd.enums.Instance;
 import org.azd.enums.WorkItemExpand;
 import org.azd.exceptions.AzDException;
 //import org.azd.interfaces.CoreDetails;
 //import org.azd.interfaces.WorkItemTrackingDetails;
+import org.azd.helpers.HelpersRequestBuilder;
 import org.azd.helpers.workitemtracking.WorkItemTrackingHelpersRequestBuilder;
+import org.azd.http.ClientRequest;
 import org.azd.serviceclient.AzDService;
 import org.azd.serviceclient.AzDServiceClient;
 //import org.azd.utils.AzDClientApi;
+import org.azd.utils.UrlBuilder;
 import org.azd.workitemtracking.comments.CommentsRequestBuilder;
 import org.azd.workitemtracking.types.*;
+import org.azd.workitemtracking.types.categories.WorkItemTypeCategories;
+import org.azd.workitemtracking.types.categories.WorkItemTypeReference;
 import org.azd.workitemtracking.workitems.WorkItemsRequestBuilder;
+import org.azd.workitemtracking.workitemtypes.WorkItemTypesRequestBuilder;
+import org.azdtasks.core.*;
 import org.azdtasks.core.WorkItemField;
-import org.azdtasks.core.WorkItemModel;
 import org.azdtasks.core.WorkItemType;
 import org.azdtasks.core.client.WorkItemClient;
-import org.azdtasks.core.client.WorkItemLegacyClient;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -62,13 +69,73 @@ public class TestAPIScratch {
     @Test
     @Ignore
     public void test1() throws AzDException {
+        Logger logger = LoggerFactory.getLogger(this.getClass());
+        logger.info("Test");
         String organization =System.getProperty("o");
 
         String project = System.getProperty("p");
         String personalAccessToken =System.getProperty("t");
     //    personalAccessToken="wrwerwrwrewrwerwerwer";
-        AzDServiceClient azDServiceClient = AzDService.builder().authentication(new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization),project, personalAccessToken)).buildClient();
+        PersonalAccessTokenCredential accessTokenCredential1 = new PersonalAccessTokenCredential(Instance.BASE_INSTANCE.append(organization), project, personalAccessToken);
+        AzDServiceClient azDServiceClient = AzDService.builder().authentication(accessTokenCredential1).buildClient();
+        HelpersRequestBuilder helpers = azDServiceClient.helpers();
+
+        WorkItemTypesRequestBuilder workItemTypesRequestBuilder = helpers.workItemTracking().workItemTypes();
+        WorkItem workItem1 = azDServiceClient.workItemTracking().workItems().get(26722);
+
+
         WorkItemClient workItemClient = new WorkItemClient(organization, project, personalAccessToken);
+        
+        Map<String, WorkItemTypeLinkToCategory> typesToCategories = workItemClient.getTypesToCategories();
+        String systemWorkItemType = workItem1.getFields().getSystemWorkItemType();
+        WorkItemTypeLinkToCategory workItemTypeLinkToCategory = typesToCategories.get(systemWorkItemType);
+        Map<String, WorkItemTypeCategory> workItemTypeCategories1 = workItemClient.getWorkItemTypeCategories();
+        Map<String, WorkItemType> workItemTypes2 = workItemClient.getWorkItemTypes();
+        Map<String, WorkItemTypeCategory> workItemTypeCategories2 = workItemClient.getWorkItemTypeCategories();
+        WorkItemTypes list1 = workItemTypesRequestBuilder.list();
+
+        // Call Azure DevOps REST API.
+        List<org.azd.workitemtracking.types.WorkItemType> workItemTypes1 = list1.getWorkItemTypes();
+        for (org.azd.workitemtracking.types.WorkItemType workItemType : workItemTypes1) {
+            System.out.println(workItemType);
+        }
+
+        final String locationUrl = azDServiceClient.locations().getUrl(ResourceId.WIT);
+        final String descriptors = azDServiceClient.locations().getConnectionData().getAuthenticatedUser().getDescriptor();
+        final AccessTokenCredential accessTokenCredential = azDServiceClient.accessTokenCredential();
+        final String projectName = accessTokenCredential.getProjectName();
+        // Construct the request URI
+        final URI requestUri = UrlBuilder.fromBaseUrl(locationUrl)
+                .appendPath(projectName)
+                .appendPath(Constants.APIS_RELATIVE_PATH)
+                .appendPath("wit")
+                .appendPath("workitemtypecategories")
+                .appendQueryString(Constants.API_VERSION, ApiVersion.WORK_ITEM_TYPES)
+                .appendQueryString("descriptors", descriptors)
+                .build();
+
+
+        WorkItemTypeCategories execute = ClientRequest.builder(accessTokenCredential).URI(requestUri).build().execute(WorkItemTypeCategories.class);// Or use Async method
+        List<org.azd.workitemtracking.types.categories.WorkItemTypeCategory> workItemTypeCategories = execute.getWorkItemTypeCategories();
+        for (org.azd.workitemtracking.types.categories.WorkItemTypeCategory workItemTypeCategory : workItemTypeCategories) {
+            System.out.println(workItemTypeCategory);
+            List<WorkItemTypeReference> workItemTypes = workItemTypeCategory.getWorkItemTypes();
+            for (WorkItemTypeReference workItemTypeReference : workItemTypes) {
+                String url = workItemTypeReference.getUrl();
+                URI uri = URI.create(url);
+                String path = uri.getPath();
+                Path path1 = Path.of(path);
+                int nameCount = path1.getNameCount();
+                Path name = path1.getName(nameCount-1);
+                System.out.println(nameCount);
+            }
+            //TODO: get the field reference from the ur
+        }
+//        System.out.println(response);
+
+
+
+
         String s= """
                   SELECT [System.Id], [System.Title], [System.Description], [System.WorkItemType], 
                                 [System.State], [System.AssignedTo], [System.CreatedDate], [System.ChangedDate] 
@@ -121,11 +188,7 @@ public class TestAPIScratch {
         String personalAccessToken =System.getProperty("t");
 
 
-        WorkItemLegacyClient workItemLegacyClient = new WorkItemLegacyClient(organisation, null, personalAccessToken);
-        WorkItemModel workItem1 = workItemLegacyClient.getWorkItem(2);
-        Map<String, WorkItemField> workItemFields = workItemLegacyClient.getWorkItemFields(v->v.isSystem() && v.type().equals("DOUBLE"));
 
-        System.out.println(workItemFields);
 //        // Connect Azure DevOps API with the organisation name and personal access token.
 //        final AzDClientApi azDClientApi = new AzDClientApi(organisation, project, personalAccessToken);
 //        WorkItemTrackingDetails workItemTrackingApi = azDClientApi.getWorkItemTrackingApi();

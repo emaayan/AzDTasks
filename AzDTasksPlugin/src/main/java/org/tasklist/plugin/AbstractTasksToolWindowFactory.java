@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public abstract class AbstractTasksToolWindowFactory<R extends TaskRepository,T extends Task> implements ToolWindowFactory {
+public abstract class AbstractTasksToolWindowFactory<R extends TaskRepository, T extends Task> implements ToolWindowFactory {
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         final AbstractTasksPanel<T> panel = createTasksPanel(project);
@@ -36,12 +36,7 @@ public abstract class AbstractTasksToolWindowFactory<R extends TaskRepository,T 
         return "";
     }
 
-    @Override
-    public boolean shouldBeAvailable(@NotNull Project project) {
-        return get(project).isPresent();
-    }
-
-    protected  Optional<R> get(Project project) {
+    protected Optional<R> get(Project project) {
         final TaskManager taskManager = TaskManager.getManager(project);
         final Optional<R> repo = Arrays.stream(taskManager.getAllRepositories())
                 .filter(this::isMyRepo).findFirst()
@@ -49,5 +44,7 @@ public abstract class AbstractTasksToolWindowFactory<R extends TaskRepository,T 
         return repo;
     }
 
-    protected abstract boolean isMyRepo(TaskRepository repo);
+    protected boolean isMyRepo(TaskRepository repo){
+        return repo.isConfigured();
+    };
 }

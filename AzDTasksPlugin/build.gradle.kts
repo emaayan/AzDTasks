@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.azdtasks"
-version = "2.0"
+version = "2.1"
 
 repositories {
     mavenCentral()
@@ -22,8 +22,13 @@ dependencies {
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         testImplementation("junit:junit:4.13.2")
-        implementation("org.azdtasks:azdcore:1.1")
+
         bundledPlugin("com.intellij.tasks")
+    }
+    implementation("org.azdtasks:azdcore:1.2") {
+        exclude(group = "org.slf4j", module = "slf4j-api")
+        exclude(group = "org.slf4j", module = "slf4j-reload4j")
+        exclude(group = "org.slf4j", module = "jul-to-slf4j")
     }
 }
 
@@ -50,6 +55,8 @@ tasks {
         systemProperty("jdk.httpclient.HttpClient.log", "requests,headers,content,errors")
     }
     runIde {
+//        systemProperty("idea.log.console.level", "DEBUG")
+//        systemProperty("idea.log.debug.categories", "#org.azdtasks")
 //        systemProperty("jdk.httpclient.HttpClient.log", "requests,headers,content,errors")
     }
 }

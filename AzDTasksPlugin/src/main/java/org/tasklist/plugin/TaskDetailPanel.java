@@ -9,6 +9,8 @@ import com.intellij.ui.components.*;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.tasklist.plugin.table.BoundTableModel;
+import org.tasklist.plugin.table.ColumnRenderer;
 
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
@@ -29,6 +31,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
     private final JButton openButton = new JButton("Open in Browser");
 
     private final BoundTableModel<Comment> taskCommentTableModel = new BoundTableModel<>();
+    private final JBTable table;
 
     private T task = null;
 
@@ -59,11 +62,11 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
         commentsPanel.add(commentsTitle, BorderLayout.NORTH);
 
         taskCommentTableModel.add(
-                taskCommentTableModel.new Column<String>("Id", String.class, Comment::getAuthor, 10)
-                , taskCommentTableModel.new Column<Date>("Summary", Date.class, Comment::getDate, 50)
-                , taskCommentTableModel.new Column<String>("Updated", String.class, Comment::getText, 200)
+                new ColumnRenderer<>("Author", String.class, Comment::getAuthor, 10)
+                , new ColumnRenderer<>("Updated", Date.class, Comment::getDate, 50)
+                , new ColumnRenderer<>("Comment", String.class, Comment::getText, 200)
         );
-        final JBTable table = taskCommentTableModel.createTable();
+        table = taskCommentTableModel.createTable();
         commentsPanel.add(new JBScrollPane(table), BorderLayout.CENTER);
 
         // Inner splitter: description (top) / comments (bottom)
@@ -146,9 +149,9 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
             final Comment[] comments = task.getComments();
             if (comments.length > 0) {
                 //commentsModel.replaceAll(Arrays.asList(comments));
-                taskCommentTableModel.set(List.of(comments));
+                taskCommentTableModel.set(List.of(comments),table);
             } else {
-                taskCommentTableModel.set(List.of());
+                taskCommentTableModel.set(List.of(),table);
                 //commentsModel.removeAll();
             }
             showCustomTask(task);
@@ -165,7 +168,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
                 </body>
                 </html>""");
         openButton.setVisible(false);
-        taskCommentTableModel.set(List.of());
+        taskCommentTableModel.set(List.of(),table);
 //        commentsModel.removeAll();
     }
 }
