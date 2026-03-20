@@ -9,6 +9,7 @@ import com.intellij.ui.components.*;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NotNull;
 import org.tasklist.plugin.table.BoundTableModel;
 import org.tasklist.plugin.table.ColumnRenderer;
 
@@ -34,6 +35,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
     private final JBTable table;
 
     private T task = null;
+
 
     public TaskDetailPanel() {
         super(new BorderLayout(0, 8));
@@ -61,11 +63,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
         commentsTitle.setFontColor(UIUtil.FontColor.BRIGHTER);
         commentsPanel.add(commentsTitle, BorderLayout.NORTH);
 
-        taskCommentTableModel.add(
-                new ColumnRenderer<>("Author", String.class, Comment::getAuthor, 10)
-                , new ColumnRenderer<>("Updated", Date.class, Comment::getDate, 50)
-                , new ColumnRenderer<>("Comment", String.class, Comment::getText, 200)
-        );
+        buildTable(taskCommentTableModel);
         table = taskCommentTableModel.createTable();
         commentsPanel.add(new JBScrollPane(table), BorderLayout.CENTER);
 
@@ -112,11 +110,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
         return grid;
     }
 
-    protected void addCustomFields(JPanel grid, GridBagConstraints lc, GridBagConstraints vc) {
-
-    }
-
-    public void addField(JPanel grid, GridBagConstraints lc, GridBagConstraints vc, String labelText, JBLabel valueLabel) {
+    protected void addField(JPanel grid, GridBagConstraints lc, GridBagConstraints vc, String labelText, JBLabel valueLabel) {
         final JBLabel label = new JBLabel(labelText);
         label.setComponentStyle(UIUtil.ComponentStyle.SMALL);
         label.setFontColor(UIUtil.FontColor.BRIGHTER); // dimmed label
@@ -161,14 +155,29 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
     }
 
     private void showEmpty() {
-        descPane.setText("""
+        descPane.setText(getEmptyText());
+        openButton.setVisible(false);
+        taskCommentTableModel.set(List.of(),table);
+//        commentsModel.removeAll();
+    }
+
+    protected void buildTable(BoundTableModel<Comment> taskCommentTableModel){
+        taskCommentTableModel.add(
+                new ColumnRenderer<>("Author", String.class, Comment::getAuthor, 10)
+                , new ColumnRenderer<>("Updated", Date.class, Comment::getDate, 50)
+                , new ColumnRenderer<>("Comment", String.class, Comment::getText, 200)
+        );
+    }
+    protected void addCustomFields(JPanel grid, GridBagConstraints lc, GridBagConstraints vc) {
+
+    }
+
+    protected @NotNull String getEmptyText() {
+        return """
                 <html>
                 <body style='color:gray;font-style:italic;padding:8px'>
                     Select a task to see details.
                 </body>
-                </html>""");
-        openButton.setVisible(false);
-        taskCommentTableModel.set(List.of(),table);
-//        commentsModel.removeAll();
+                </html>""";
     }
 }

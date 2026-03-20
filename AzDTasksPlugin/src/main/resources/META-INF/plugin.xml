@@ -7,14 +7,35 @@
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-name -->
     <name>AzDTasks</name>
 
-
     <vendor>Elhanan Maayan</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-description -->
     <description><![CDATA[
-        IntelliJ plugin to integrate Azure DevOps work items with IDE tasks.
-    ]]></description>
+<h2>Azure DevOps Tasks Integration</h2>
+<p>Integrates Azure DevOps work items directly into your JetBrains IDE, letting you browse, track, and manage tasks without leaving the editor.</p>
+
+<h3>Features</h3>
+<ul>
+  <li><b>Task Repository Integration</b> – Connect to Azure DevOps as a native IDE task repository; search work items by title, description, or ID from the <em>Open Task</em> dialog.</li>
+  <li><b>Current Sprint Panel</b> – Dedicated tool window showing your assigned work items for the current iteration, with auto-refresh.</li>
+  <li><b>Work Item State Management</b> – Transition work items through their workflow states (e.g. Active → Resolved) directly from the IDE.</li>
+  <li><b>Time Tracking</b> – Log time spent on tasks back to a configurable Azure DevOps numeric field.</li>
+  <li><b>Work Item Type Icons</b> – Displays the native Azure DevOps icon for each work item type (Bug, Task, User Story, etc.).</li>
+  <li><b>PAT Authentication</b> – Authenticates using a Personal Access Token with minimal required scopes.</li>
+</ul>
+
+<h3>Setup</h3>
+<ol>
+  <li>Go to <b>Settings → Tools → Tasks → Servers</b> and add a new <b>Azure DevOps</b> server.</li>
+  <li>Enter your <b>organization name</b> (e.g. {@code myorg} from {@code dev.azure.com/myorg}).</li>
+  <li>Create a Personal Access Token in Azure DevOps with <em>Work Items (Read &amp; Write)</em> scope and paste it in.</li>
+  <li>Click <b>Test Connection</b> — project and team dropdowns will populate automatically.</li>
+  <li>Select your project and team, then save.</li>
+</ol>
+
+<p>The <b>Azure Tasks</b> tool window (right panel) will show your current sprint items and refresh automatically.</p>
+]]></description>
 
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->

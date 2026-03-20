@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.azdtasks"
-version = "2.1"
+version = "2.2"
 
 repositories {
     mavenCentral()
@@ -39,7 +39,7 @@ intellijPlatform {
         }
 
         changeNotes = """
-            Initial version
+            added custom where clause
         """.trimIndent()
     }
 }

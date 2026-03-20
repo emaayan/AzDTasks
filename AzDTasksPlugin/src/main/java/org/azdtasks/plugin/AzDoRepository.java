@@ -22,6 +22,7 @@ import org.azdtasks.core.client.WorkItemClient;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Unmodifiable;
+import org.tasklist.plugin.TaskQueryProvider;
 
 import javax.swing.*;
 import java.net.MalformedURLException;
@@ -35,11 +36,12 @@ import java.util.stream.Collectors;
  * Azure DevOps task repository implementation
  */
 @Tag(AzDoRepositoryType.NAME)
-public class AzDoRepository extends NewBaseRepositoryImpl {
+public class AzDoRepository extends NewBaseRepositoryImpl implements TaskQueryProvider<AzTask> {
 
     private static final Logger LOG = Logger.getInstance(AzDoRepository.class);
 
 
+    public static final String DEFAULT_WHERE = "System.IterationPath=@CurrentIteration AND [System.AssignedTo] = @Me";
 
     //Categories are sorted by their logical order
     public enum Category {
@@ -67,6 +69,8 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 
     private final Set<String> defClosedStates = Set.of("Closed", "Done", "Removed", "Resolved");
     private Map<String, WorkItemType> workItemTypes = new HashMap<>();
+    private String where ="";
+
 //    private final Map<TaskType, String> taskTypeToWorkItemTypeMap = new HashMap<>();
 //    private final Map<String, TaskType> workItemTypeToTaskTypeMap = new HashMap<>();
     //Microsoft.RequirementCategory
@@ -84,12 +88,14 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
     //required for reflection
     public AzDoRepository() {
         super();
+        setWhere(AzDoRepository.DEFAULT_WHERE);
 //        setBugWorkItemType("Bug");
 //        setFeatureWorkItemType("Feature");
     }
 
     public AzDoRepository(TaskRepositoryType type) {
         super(type);
+        setWhere(AzDoRepository.DEFAULT_WHERE);
 //        setBugWorkItemType("Bug");
 //        setFeatureWorkItemType("Feature");
     }
@@ -102,6 +108,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         setTeam(other.getTeam());
         setTop(other.getTop());
         setTimeTrackFieldName(other.getTimeTrackFieldName());
+        setWhere(other.getWhere());
 //        workItemTypeToTaskTypeMap.putAll(other.workItemTypeToTaskTypeMap);
 //        taskTypeToWorkItemTypeMap.putAll(other.taskTypeToWorkItemTypeMap);
     }
@@ -344,15 +351,36 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
         return fetchClient().executeQuery(getTeam(), formatted);
     }
 
+    @Override
     public AzTask @NotNull [] getCurrentTasks() throws WorkItemException {
+        final String w=" " + wrapWhere()+ " ";//add space to avoid syntax error
         final String s = """
                 SELECT [System.Id]
-                FROM WorkItems 
-                WHERE System.IterationPath=@CurrentIteration AND [System.AssignedTo] = @Me 
+                FROM WorkItems
+                %s
                 ORDER BY Microsoft.VSTS.Common.Priority, System.State
-                """;
+                """.formatted(w);
         final List<WorkItemModel> executeQuery = getExecuteQuery(s);
         return convert(executeQuery);
+    }
+
+    //provide escaping if needed
+    protected @NotNull String wrapWhere() {
+        return StringUtil.isNotEmpty(where) ? "WHERE " + where : " WHERE "+AzDoRepository.DEFAULT_WHERE;
+    }
+
+    @Override
+    public boolean isReady() {
+        return isConfigured() && StringUtil.isNotEmpty(where);
+    }
+
+    @Attribute("where")
+    public String getWhere() {
+        return where;
+    }
+
+    public void setWhere(String where) {
+        this.where = where;
     }
 
     private @NotNull String getQuery(@NotNull String query) {
@@ -628,6 +656,7 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
 //                && Objects.equals(getBugWorkItemType(), that.getBugWorkItemType())
 //                && Objects.equals(getFeatureWorkItemType(), that.getFeatureWorkItemType())
                 && Objects.equals(getTimeTrackFieldName(), that.getTimeTrackFieldName())
+                && Objects.equals(getWhere(),that.getWhere())
                 ;
 
     }
@@ -640,7 +669,10 @@ public class AzDoRepository extends NewBaseRepositoryImpl {
                 , getTop()
 //                , getBugWorkItemType()
 //                , getFeatureWorkItemType()
-                , getTimeTrackFieldName());
+                , getTimeTrackFieldName()
+                ,getWhere()
+        )
+                ;
     }
 
 }

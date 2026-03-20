@@ -5,6 +5,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.tasks.config.BaseRepositoryEditor;
 import com.intellij.tasks.impl.TaskUiUtil;
 import com.intellij.ui.SimpleListCellRenderer;
@@ -41,6 +42,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
 //    private ComboBoxUpdater workTypesForFeature;
     private ComboBoxUpdater timeTrackingFieldName;
     private IntegerField topField;
+    private JBTextField where;
 
     public AzDoRepositoryEditor(Project project, AzDoRepository repository, Consumer<? super AzDoRepository> changeListener) {
         super(project, repository, changeListener);
@@ -48,7 +50,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         myUsernameLabel.setVisible(false);
         myUserNameText.setVisible(false);
         myPasswordLabel.setVisible(true);
-        myPasswordLabel.setText("Personal access token:");
+        myPasswordLabel.setText("Token:");
         myPasswordText.setVisible(true);
         myPasswordText.setToolTipText("Personal Access Token with Work Items read permission");
         myUrlLabel.setVisible(true);
@@ -62,12 +64,13 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
     @Override
     public void apply() {
         myRepository.setOrganization(organizationUrlField.getText().trim());
+        myRepository.setWhere(where.getText().trim());
         projects.update();
         teams.update();
 //        workTypesForBug.update();
 //        workTypesForFeature.update();
         timeTrackingFieldName.update();
-        ;
+
 
         final int value = topField.getValue();
         if (value > 0) {
@@ -192,7 +195,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
 
         timeTrackingFieldName = new ComboBoxUpdater("Fields for time tracking", myRepository::getTimeTrackFieldName, myRepository::setTimeTrackFieldName, myRepository::getWorkItemFieldsForTimeTrack);
         updateProjectNamesInCombo();
-//        UIUtil.invokeLaterIfNeeded(this::updateProjectNamesInCombo);
+
         // Help text
         final JBLabel helpLabel = new JBLabel("""
                 <html><body style='width: 400px'>\
@@ -207,6 +210,13 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
         helpLabel.setForeground(UIUtil.getContextHelpForeground());
         helpLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
 
+        final String where1 = myRepository.getWhere();
+        where = new JBTextField(where1);
+//        where.setPreferredSize(new Dimension(100, topField.getPreferredSize().height));
+//        where.setMaximumSize(topField.getPreferredSize());
+        where.setToolTipText("Custom where clause for the task view");
+        where.getEmptyText().setText(AzDoRepository.DEFAULT_WHERE);
+        installListener(where);
 
         final JPanel panel = FormBuilder.createFormBuilder()
                 .addLabeledComponent("Organization:", organizationUrlField)
@@ -218,6 +228,7 @@ public class AzDoRepositoryEditor extends BaseRepositoryEditor<AzDoRepository> {
 //                .addLabeledComponent("Bug work item type:", workTypesForBug.getCombo())
 //                .addLabeledComponent("Feature work item type:", workTypesForFeature.getCombo())
                 .addLabeledComponent("Field for time tracking:", timeTrackingFieldName.getCombo())
+                .addLabeledComponent("Where clause:", where)
 //                .addComponentFillVertically(new JBPanel(new FlowLayout(FlowLayout.LEFT, 0, 0)), 0)
                 .getPanel();
 

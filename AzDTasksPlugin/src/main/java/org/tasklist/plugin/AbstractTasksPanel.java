@@ -1,17 +1,13 @@
 package org.tasklist.plugin;
 
 
-import com.intellij.ide.BrowserUtil;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.tasks.LocalTask;
 import com.intellij.tasks.Task;
-import com.intellij.tasks.TaskManager;
 import com.intellij.tasks.actions.OpenTaskDialog;
 import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBSplitter;
@@ -39,7 +35,6 @@ import java.util.*;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
 public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<AbstractTasksPanel<? extends Task>> {
 
@@ -48,7 +43,7 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
     private final Project project;
 
     private final BoundTableModel<T> taskTableModel = new BoundTableModel<>();
-    private final TaskDetailPanel<T> detailPanel = new TaskDetailPanel<>();
+    private final TaskDetailPanel<T> detailPanel;
     private String lastQuery = "";
 
     private static final String REFRESH_INTERVAL_KEY = "AzureTasks.refreshInterval";
@@ -57,25 +52,19 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
     private ScheduledFuture<?> scheduledFuture = null;
 
     private final JBTable table;
+
     public AbstractTasksPanel(@NotNull Project project) {
         super(new BorderLayout());
         this.project = project;
-
+        detailPanel = createDetailPane();
 
         // Top: search bar + table
         final JBPanel<?> topPanel = new JBPanel<>(new BorderLayout());
         final JBPanel<?> jbPanel = buildBar();
         topPanel.add(jbPanel, BorderLayout.NORTH);
 
-        taskTableModel
-                .add(
-                        new IconColumnRender<>("Type", t -> new IconData(t.getIcon()))
-                        , new ColumnRenderer<>("Id", String.class, Task::getNumber, 20)
-                        , new ColumnRenderer<>("Summary", String.class, Task::getSummary, 300)
-                        , new ColumnRenderer<>("Updated", Date.class, Task::getUpdated, 120)
-                        , new ColumnRenderer<>("Closed", Boolean.class, Task::isClosed, 10)
-                );
 
+        addBasicFields(taskTableModel);
         addCustomFields(taskTableModel);
         table = taskTableModel.createTable();
         table.addMouseListener(new MouseAdapter() {
@@ -123,17 +112,8 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         // Find or create the LocalTask from the tracker task
         final OpenTaskDialog openTaskDialog = new OpenTaskDialog(project, task);
         openTaskDialog.show();
-//        LocalTask localTask = taskManager.findTask(task.getId());
-//
-//        if (localTask == null) {
-//            // Activate it — this creates the LocalTask and shows the Open Task dialog
-//            taskManager.activateTask(task, true);
-//        } else {
-//            // Already exists locally — show the dialog directly
-//            final OpenTaskDialog openTaskDialog = new OpenTaskDialog(project, localTask);
-//            openTaskDialog.show();
-//        }
     }
+
     private int loadPersistedInterval() {
         return PropertiesComponent.getInstance(project).getInt(REFRESH_INTERVAL_KEY, DEFAULT_REFRESH_INTERVAL);
     }
@@ -187,8 +167,6 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         return bar;
     }
 
-    protected abstract void addCustomFields(BoundTableModel<T> taskTableModel);
-
     private void restartAutoRefresh(int newIntervalSec) {
         stopAutoRefresh();
         scheduler = AppExecutorUtil.createBoundedScheduledExecutorService("TasksRefresh", 1);
@@ -223,19 +201,35 @@ public abstract class AbstractTasksPanel<T extends Task> extends JBPanel<Abstrac
         ProgressManager.getInstance().run(new com.intellij.openapi.progress.Task.Backgroundable(project, "Loading tasks") {
                                               @Override
                                               public void run(@NotNull ProgressIndicator indicator) {
+                                                  indicator.checkCanceled();
                                                   try {
                                                       final T[] tasks = getTasks(indicator, query);
-                                                      ApplicationManager.getApplication().invokeLater(() -> taskTableModel.set(Arrays.asList(tasks),table));
+                                                      ApplicationManager.getApplication().invokeLater(() ->taskTableModel.set(Arrays.asList(tasks), table));
                                                   } catch (Exception e) {
-                                                      LOG.error("Failed to invoke query ", e);
-                                                      ApplicationManager.getApplication().invokeLater(() -> onQueryError(e)
-                                                              //Messages.showErrorDialog(project, e.getMessage(), "Tasks Error")
-                                                      );
+                                                      LOG.error("Failed to invoke query", e);
+                                                      onQueryError(e);
                                                   }
+
                                               }
                                           }
         );
     }
+
+    protected void addBasicFields(BoundTableModel<T> taskTableModel){
+        taskTableModel.add(
+                        new IconColumnRender<>("Type", t -> new IconData(t.getIcon()))
+                        , new ColumnRenderer<>("Id", String.class, Task::getNumber, 20)
+                        , new ColumnRenderer<>("Summary", String.class, Task::getSummary, 300)
+                        , new ColumnRenderer<>("Updated", Date.class, Task::getUpdated, 120)
+                        , new ColumnRenderer<>("Closed", Boolean.class, Task::isClosed, 10)
+                );
+    }
+
+    protected  @NotNull TaskDetailPanel<T> createDetailPane() {
+        return new TaskDetailPanel<>();
+    }
+
+    protected abstract void addCustomFields(BoundTableModel<T> taskTableModel);
 
     protected abstract void onQueryError(Exception e);
 

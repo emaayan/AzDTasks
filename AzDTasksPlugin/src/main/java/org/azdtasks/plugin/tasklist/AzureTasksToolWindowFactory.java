@@ -11,6 +11,7 @@ import org.azdtasks.plugin.AzTask;
 import org.jetbrains.annotations.NotNull;
 import org.tasklist.plugin.AbstractTasksPanel;
 import org.tasklist.plugin.AbstractTasksToolWindowFactory;
+import org.tasklist.plugin.TaskQueryProvider;
 import org.tasklist.plugin.table.BoundTableModel;
 import org.tasklist.plugin.table.ColumnRenderer;
 
@@ -25,6 +26,7 @@ public class AzureTasksToolWindowFactory extends AbstractTasksToolWindowFactory<
             @Override
             protected AzTask[] getTasks(ProgressIndicator indicator, String query) throws Exception {
                 Optional<AzDoRepository> azDoRepository1 = get(project);
+                indicator.checkCanceled();
                 final AzTask[] tasks = azDoRepository1.map(azDoRepository -> {
                     try {
                         return azDoRepository.getCurrentTasks();
@@ -53,10 +55,15 @@ public class AzureTasksToolWindowFactory extends AbstractTasksToolWindowFactory<
         };
     }
 
-
     @Override
-    protected boolean isMyRepo(TaskRepository repo) {
-        return super.isMyRepo(repo) && repo.getRepositoryType().getRepositoryClass().equals(AzDoRepository.class);
+    protected Class<AzDoRepository> getProviderClass() {
+        return AzDoRepository.class;
     }
+
+
+//    @Override
+//    protected boolean isMyRepo(TaskQueryProvider<AzTask> repo) {
+//        return super.isMyRepo(repo) && repo.getRepositoryType().getRepositoryClass().equals(AzDoRepository.class);
+//    }
 
 }
