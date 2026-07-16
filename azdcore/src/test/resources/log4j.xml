@@ -19,7 +19,7 @@
 
 
     <root>
-        <level value="all"/>
+        <level value="info"/>
         <appender-ref ref="Log"/>
         <appender-ref ref="Console"/>
     </root>

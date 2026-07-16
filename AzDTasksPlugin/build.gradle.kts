@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.azdtasks"
-version = "2.2"
+version = "2.3"
 
 repositories {
     mavenCentral()
@@ -25,7 +25,7 @@ dependencies {
 
         bundledPlugin("com.intellij.tasks")
     }
-    implementation("org.azdtasks:azdcore:1.2") {
+    implementation("org.azdtasks:azdcore:1.4") {
         exclude(group = "org.slf4j", module = "slf4j-api")
         exclude(group = "org.slf4j", module = "slf4j-reload4j")
         exclude(group = "org.slf4j", module = "jul-to-slf4j")

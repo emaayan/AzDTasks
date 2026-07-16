@@ -1,13 +1,11 @@
 package org.azdtasks.plugin;
 
+import andel.operation.Op;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.util.AtomicClearableLazyValue;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.NlsSafe;
-import com.intellij.tasks.Comment;
-import com.intellij.tasks.Task;
-import com.intellij.tasks.TaskRepository;
-import com.intellij.tasks.TaskType;
+import com.intellij.tasks.*;
 import com.intellij.ui.IconManager;
 import com.intellij.util.IconUtil;
 import org.azdtasks.core.WorkItemComments;
@@ -17,15 +15,14 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import javax.swing.text.html.Option;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Date;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Supplier;
 
 public class AzTask extends Task {
+
     private final AzDoRepository azDoRepository;
     private final WorkItemModel workItemModel;
     private final TaskType taskType;
@@ -43,7 +40,7 @@ public class AzTask extends Task {
 
     @NotNull
     @Override
-    public String getId() {
+    public String getId() {//used for time tracking id
         final String s = azDoRepository.buildId(getNumber());
         return s;
     }
@@ -128,10 +125,10 @@ public class AzTask extends Task {
     public @NotNull Icon getIcon() {
         final String customIcon = iconUrl;// getCustomIcon();
         final Icon icon1 = azDoRepository.fetchIcon(customIcon).orElseGet(() -> {
-            final TaskType type = getType();
-            final Icon icon = icons.getOrDefault(type, AllIcons.FileTypes.Any_type);
-            return icon;
-        }
+                    final TaskType type = getType();
+                    final Icon icon = icons.getOrDefault(type, AllIcons.FileTypes.Any_type);
+                    return icon;
+                }
         );
         return icon1;
     }
@@ -154,12 +151,10 @@ public class AzTask extends Task {
         return azDoRepository.getProject();
     }
 
-    @Nullable
     @Override
     public TaskRepository getRepository() {
         return azDoRepository;
     }
-
 
     @Override
     public boolean isClosed() {

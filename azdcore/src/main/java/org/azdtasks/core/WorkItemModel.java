@@ -2,13 +2,16 @@ package org.azdtasks.core;
 
 
 import java.util.Date;
+import java.util.Map;
 import java.util.Objects;
 
 /**
  * Simplified model for Azure DevOps work items
  */
 public record WorkItemModel(int id, String title, String description, String workItemType, String state,
-                            String assignedTo, Date createdDate, Date changedDate,WorkItemComments workItemComments,String url) {
+                            String assignedTo, Date createdDate, Date changedDate, WorkItemComments workItemComments,
+                            String url,
+                            Map<String, String> otherFields) {
 
     @Override
     public boolean equals(Object o) {

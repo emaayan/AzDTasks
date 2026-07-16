@@ -81,7 +81,7 @@ public class TaskDetailPanel<T extends Task> extends JBPanel<TaskDetailPanel<? e
             @Override
             public void actionPerformed(ActionEvent e) {
                 if (task != null) {
-                    openButton.addActionListener(l -> BrowserUtil.browse(Objects.requireNonNull(task.getIssueUrl())));
+                    BrowserUtil.browse(Objects.requireNonNull(task.getIssueUrl()));
                 }
             }
         });
